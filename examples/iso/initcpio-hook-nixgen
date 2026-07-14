@@ -32,8 +32,11 @@ nixgen_mount_handler() {
 	label="${nixlabel:-NIXISO}"
 	mkdir -p /run/nixiso /run/nixstore /run/nixstoredev /run/cow
 
+	# settle waits for discovered hardware to finish udev processing,
+	# not for absent hardware: a boot without a store disk pays ~0s
+	# here where poll_device would burn its full timeout
 	storedev="/dev/disk/by-label/${nixstorelabel:-NIXSTORE}"
-	poll_device "$storedev" 5
+	udevadm settle --timeout=5 2>/dev/null
 	if [ -b "$storedev" ] && mount "$storedev" /run/nixstoredev; then
 		msg ":: nixgen: writable store on $storedev"
 	fi
@@ -61,6 +64,15 @@ nixgen_mount_handler() {
 	fi
 
 	lower="/run/nixstore/$nixgen"
+	if [ ! -d "$lower" ] && ! grep -q " /run/nixstoredev " /proc/mounts; then
+		# committed generations exist only on the store disk; now that
+		# it's known to be required, wait for a slow one (usb)
+		if poll_device "$storedev" 10 && mount "$storedev" /run/nixstoredev \
+				&& [ -d "/run/nixstoredev/nix/store/$nixgen" ]; then
+			umount /run/nixstore 2>/dev/null
+			mount -o bind /run/nixstoredev/nix/store /run/nixstore
+		fi
+	fi
 	if [ ! -d "$lower" ]; then
 		err "nixgen: generation '$nixgen' not in store"
 		ls /run/nixstore

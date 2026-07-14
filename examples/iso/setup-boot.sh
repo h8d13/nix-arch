@@ -11,6 +11,10 @@ install -Dm644 "$I/initcpio-hook-nixgen" /etc/initcpio/hooks/nixgen
 install -Dm644 "$I/mkinitcpio.conf" /etc/mkinitcpio.conf
 
 echo nixarch > /etc/hostname
+# bake the machine identity into the generation: without it every boot
+# is a systemd "first boot" (tmpfs upper) and re-applies preset policy.
+# Generations of one machine sharing an id is the correct semantic.
+systemd-machine-id-setup
 # networking out of the box: DHCP on any en* (QEMU user NAT, real ethernet)
 cat > /etc/systemd/network/dhcp.network <<EOF
 [Match]

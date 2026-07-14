@@ -22,6 +22,9 @@
   │ iso/mkstoredisk.sh [img] [size]      │ blank ext4 disk (label NIXSTORE); attach it and nixgen-commit     │
   │                                      │ inside the box persists generations onto it                       │
   ├──────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
+  │ iso/mkbootdisk.sh <store-root>       │ standalone bootable disk image (UEFI, no ISO): GRUB on ESP +      │
+  │ [img] [size-MiB]                     │ seeded store partition; size to the target disk (sparse), dd it   │
+  ├──────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
   │ iso/boot-test.sh                     │ headless QEMU smoke-boot of build/nixarch.iso, PASS on autologin  │
   │                                      │ (attaches build/nixstore.img when present)                        │
   └──────────────────────────────────────┴───────────────────────────────────────────────────────────────────┘
@@ -56,4 +59,19 @@ Reruns of mkiso.sh reuse the nixarch generations and only reassemble the
 ISO; `REBUILD=1 examples/iso/mkiso.sh ...` discards and rebuilds them
 (needed after changing setup-boot.sh or the initcpio hook). After any ISO
 rebuild, restart QEMU: a live VM's GRUB menu points at pre-rebuild hashes.
+
+Real hardware (UEFI): build the image at the target disk's size, then flash.
+The image is sparse and `conv=sparse` skips the empty space, so a full-disk
+image flashes in minutes regardless of disk size.
+
+```
+  examples/iso/mkbootdisk.sh build/archstore build/nixarch-disk.img \
+      $(( $(lsblk -b -dn -o SIZE /dev/sdX) / 1048576 ))
+  sudo dd if=build/nixarch-disk.img of=/dev/sdX bs=4M conv=sparse \
+      oflag=direct status=progress && sync
+```
+
+`sdX` = the target disk; everything on it is lost. Old bytes in the skipped
+(sparse) regions stay physically present. Harmless (ext4 never reads
+unallocated blocks), but drop `conv=sparse` for a full overwrite.
 

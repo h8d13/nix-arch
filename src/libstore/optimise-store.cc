@@ -148,6 +148,14 @@ void LocalStore::optimisePath_(
         return;
     }
 
+    /* Never link empty files: saves zero bytes and welds unrelated
+       runtime-mutable paths (subuid, wtmp, lastlog, ...) into one
+       inode, which a rootfs generation booted as an overlay lower
+       layer then writes through. Also the classic too-many-links
+       case. */
+    if (S_ISREG(st.st_mode) && st.st_size == 0)
+        return;
+
     /* This can still happen on top-level files. */
     if (st.st_nlink > 1 && inodeHash.contains(st.st_ino)) {
         debug("%s is already linked, with %d other file(s)", PathFmt(path), st.st_nlink - 2);

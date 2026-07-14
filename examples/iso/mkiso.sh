@@ -71,8 +71,12 @@ ISO=$TMP/iso
 mkdir -p "$ISO/boot/grub"
 unshare -r "$GEN1/usr/lib/ld-linux-x86-64.so.2" --library-path "$GEN1/usr/lib" \
 	"$GEN1/usr/bin/mksquashfs" "$SDIR" "$ISO/nixstore.squashfs" \
-	-comp zstd -noappend -wildcards \
+	-comp zstd -noappend -wildcards -no-hardlinks \
 	-e '.links' 'tmp-*' '*/var/cache/pacman/pkg/*'
+	# -no-hardlinks: store dedup hardlinks would survive into the squash
+	# and alias unrelated paths through one inode under the boot overlay
+	# (writing wtmp rewrote /etc/subuid); squashfs dedups by content, so
+	# splitting them costs nothing
 
 # gen1 and gen2 share the same kernel/initramfs files
 cp "$GEN1/boot/vmlinuz-linux" "$ISO/boot/vmlinuz-linux"
@@ -83,13 +87,6 @@ cat > "$ISO/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
-# generations committed from inside the box (nixgen-commit) live on the
-# NIXSTORE disk; pull their menu entries in when it's attached
-search --no-floppy --set=nixdev --label NIXSTORE
-if [ -n "\$nixdev" ]; then
-	source (\$nixdev)/entries.cfg
-fi
-
 menuentry "nixarch: $G2" {
 	linux /boot/vmlinuz-linux nixgen=$G2 nixlabel=$LABEL console=ttyS0,115200 console=tty0
 	initrd /boot/initramfs-linux.img
@@ -97,6 +94,19 @@ menuentry "nixarch: $G2" {
 menuentry "nixarch: $G1 (rollback)" {
 	linux /boot/vmlinuz-linux nixgen=$G1 nixlabel=$LABEL console=ttyS0,115200 console=tty0
 	initrd /boot/initramfs-linux.img
+}
+
+# generations committed from inside the box (nixgen-commit) live on the
+# NIXSTORE disk. The search runs when the submenu is entered, not at
+# menu-build time: BIOS grub probing for an absent label costs ~10s,
+# which every boot would pay
+submenu "committed generations (NIXSTORE disk) ->" {
+	search --no-floppy --set=nixdev --label NIXSTORE
+	if [ -n "\$nixdev" ]; then
+		source (\$nixdev)/entries.cfg
+	else
+		menuentry "no NIXSTORE device found" { true }
+	fi
 }
 EOF
 

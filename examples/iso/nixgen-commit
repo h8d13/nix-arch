@@ -28,10 +28,15 @@ LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
 NEW=$(ls -td /nixstoredev/nix/store/*-"$NAME" | head -1)
 GEN=$(basename "$NEW")
 
+# new entry boots with the same kernel params as the running system,
+# minus the generation selector and GRUB's own bookkeeping
+CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
+	| grep -v '^nixgen=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
+
 cat >> /nixstoredev/entries.cfg <<EOF
 menuentry "nixarch: $GEN (committed)" {
 	search --no-floppy --set=nixdev --label NIXSTORE
-	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN console=ttyS0,115200 console=tty0
+	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN $CMDLINE
 	initrd (\$nixdev)/nix/store/$GEN/boot/initramfs-linux.img
 }
 EOF

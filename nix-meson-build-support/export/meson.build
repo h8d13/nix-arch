@@ -33,7 +33,7 @@ if plugin_c_api_enabled and host_machine.system() == 'darwin'
   installed_whole_archive_link_arg = '-Wl,-force_load,${libdir}/' + fs.name(
     this_static_library.full_path(),
   )
-elif plugin_c_api_enabled and not host_machine.system().startswith('windows')
+elif plugin_c_api_enabled
   installed_whole_archive_link_arg = '-Wl,--whole-archive,${libdir}/' + fs.name(
     this_static_library.full_path(),
   ) + ',--no-whole-archive'

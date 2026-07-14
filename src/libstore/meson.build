@@ -102,11 +102,6 @@ if host_machine.system() == 'darwin'
   deps_other += [ sandbox ]
 endif
 
-if host_machine.system() == 'windows'
-  wsock32 = cxx.find_library('wsock32')
-  deps_other += [ wsock32 ]
-endif
-
 subdir('nix-meson-build-support/libatomic')
 
 boost = dependency(
@@ -245,25 +240,18 @@ endforeach
 
 # sysconfdir doesn't get anything installed to directly, and is only used to
 # tell Nix where to look for nix.conf, so it doesn't get appended to prefix.
-if host_machine.system() != 'windows'
-  sysconfdir = get_option('sysconfdir')
-  if not fs.is_absolute(sysconfdir)
-    sysconfdir = '/' / sysconfdir
-  endif
+sysconfdir = get_option('sysconfdir')
+if not fs.is_absolute(sysconfdir)
+  sysconfdir = '/' / sysconfdir
 endif
 
 # Aside from prefix itself, each of these was made into an absolute path
 # by joining it with prefix, unless it was already an absolute path
 # (which is the default for store-dir, localstatedir, and log-dir).
 configdata_priv.set_quoted('NIX_STORE_DIR', store_dir)
-# On Windows, NIX_STATE_DIR, NIX_LOG_DIR, and NIX_CONF_DIR are determined at
-# runtime using the Windows known folders API (FOLDERID_ProgramData), so we
-# don't define them at compile time.
-if host_machine.system() != 'windows'
-  configdata_priv.set_quoted('NIX_STATE_DIR', localstatedir / 'nix')
-  configdata_priv.set_quoted('NIX_LOG_DIR', log_dir)
-  configdata_priv.set_quoted('NIX_CONF_DIR', sysconfdir / 'nix')
-endif
+configdata_priv.set_quoted('NIX_STATE_DIR', localstatedir / 'nix')
+configdata_priv.set_quoted('NIX_LOG_DIR', log_dir)
+configdata_priv.set_quoted('NIX_CONF_DIR', sysconfdir / 'nix')
 
 lsof = find_program('lsof', required : false)
 configdata_priv.set_quoted(
@@ -380,14 +368,7 @@ if host_machine.system() == 'darwin'
   subdir('darwin')
 endif
 
-if host_machine.system() == 'windows'
-  subdir('windows')
-else
-  subdir('unix')
-endif
-
-subdir('nix-meson-build-support/export-all-symbols')
-subdir('nix-meson-build-support/windows-version')
+subdir('unix')
 
 this_library = library(
   'nixstore',
@@ -397,7 +378,6 @@ this_library = library(
   soversion : nix_soversion,
   dependencies : deps_public + deps_private + deps_other,
   include_directories : include_dirs,
-  link_args : linker_export_flags,
   prelink : true, # For C++ static initializers
   install : true,
   cpp_pch : do_pch ? [ 'pch/precompiled-headers.hh' ] : [],

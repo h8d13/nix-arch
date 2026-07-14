@@ -46,10 +46,7 @@ configdata_pub.set(
 
 subdir('nix-meson-build-support/libatomic')
 
-if host_machine.system() == 'windows'
-  socket = cxx.find_library('ws2_32')
-  deps_other += socket
-elif host_machine.system() == 'sunos'
+if host_machine.system() == 'sunos'
   socket = cxx.find_library('socket')
   network_service_library = cxx.find_library('nsl')
   deps_other += [ socket, network_service_library ]
@@ -206,14 +203,7 @@ if host_machine.system() == 'freebsd'
   subdir('freebsd')
 endif
 
-if host_machine.system() == 'windows'
-  subdir('windows')
-else
-  subdir('unix')
-endif
-
-subdir('nix-meson-build-support/export-all-symbols')
-subdir('nix-meson-build-support/windows-version')
+subdir('unix')
 
 this_library = library(
   'nixutil',
@@ -221,7 +211,6 @@ this_library = library(
   soversion : nix_soversion,
   dependencies : deps_public + deps_private + deps_other,
   include_directories : include_dirs,
-  link_args : linker_export_flags,
   prelink : true, # For C++ static initializers
   install : true,
   cpp_pch : do_pch ? [ 'pch/precompiled-headers.hh' ] : [],
@@ -230,10 +219,5 @@ this_library = library(
 install_headers(headers, subdir : 'nix/util', preserve_path : true)
 
 libraries_private = []
-if host_machine.system() == 'windows'
-  # `libraries_private` cannot contain ad-hoc dependencies (from
-  # `find_library), so we need to do this manually
-  libraries_private += [ '-lws2_32' ]
-endif
 
 subdir('nix-meson-build-support/export')

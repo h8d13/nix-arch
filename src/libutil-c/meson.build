@@ -46,9 +46,6 @@ headers = files(
 # TODO don't install this once tests don't use it.
 headers += files('nix_api_util_internal.h')
 
-subdir('nix-meson-build-support/export-all-symbols')
-subdir('nix-meson-build-support/windows-version')
-
 # For linking -c bindings into the cli for plugins.
 build_both_libraries = get_option('plugin-c-api')
 
@@ -56,7 +53,6 @@ library_kwargs = {
   'soversion' : nix_soversion,
   'dependencies' : deps_public + deps_private + deps_other,
   'include_directories' : include_dirs,
-  'link_args' : linker_export_flags,
   'install' : true,
 }
 

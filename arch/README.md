@@ -79,9 +79,9 @@ pacman -S --needed grub xorriso mtools e2fsprogs qemu-base
 ```
 
 ```
-  examples/bootstrap.sh build/archstore          # fresh base (once)
-  examples/iso/mkiso.sh build/archstore <base>   # ISO (<base> = path bootstrap printed)
-  examples/iso/mkstoredisk.sh                    # blank persistence disk
+  arch/bootstrap.sh build/archstore          # fresh base (once)
+  arch/iso/mkiso.sh build/archstore <base>   # ISO (<base> = path bootstrap printed)
+  arch/iso/mkstoredisk.sh                    # blank persistence disk
   qemu-system-x86_64 -accel kvm -m 2G -boot d -cdrom build/nixarch.iso \
       -drive file=build/nixstore.img,format=raw,if=virtio \
       -nic user,model=virtio-net-pci
@@ -89,7 +89,7 @@ pacman -S --needed grub xorriso mtools e2fsprogs qemu-base
 ```
 
 Reruns of mkiso.sh reuse the nixarch generations and only reassemble the
-ISO; `REBUILD=1 examples/iso/mkiso.sh ...` discards and rebuilds them
+ISO; `REBUILD=1 arch/iso/mkiso.sh ...` discards and rebuilds them
 (needed after changing setup-boot.sh or the initcpio hook). After any ISO
 rebuild, restart QEMU: a live VM's GRUB menu points at pre-rebuild hashes.
 
@@ -98,7 +98,7 @@ The image is sparse and `conv=sparse` skips the empty space, so a full-disk
 image flashes in minutes regardless of disk size.
 
 ```
-  examples/iso/mkbootdisk.sh build/archstore build/nixarch-disk.img \
+  arch/iso/mkbootdisk.sh build/archstore build/nixarch-disk.img \
       $(( $(lsblk -b -dn -o SIZE /dev/sdX) / 1048576 ))
   sudo dd if=build/nixarch-disk.img of=/dev/sdX bs=4M conv=sparse \
       oflag=direct status=progress && sync

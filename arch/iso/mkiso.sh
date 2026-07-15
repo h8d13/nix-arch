@@ -18,11 +18,11 @@ LABEL=NIXISO
 
 P=$REPO/build/prefix
 [ -x "$REPO/build/rm-path" ] || {
-	g++ -std=c++23 -O2 examples/rm-path.cc -o build/rm-path \
+	g++ -std=c++23 -O2 arch/rm-path.cc -o build/rm-path \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
 }
 [ -x "$REPO/build/import-dir" ] || {
-	g++ -std=c++23 -O2 examples/import-dir.cc -o build/import-dir \
+	g++ -std=c++23 -O2 arch/import-dir.cc -o build/import-dir \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
 }
 
@@ -46,14 +46,14 @@ GEN2=$(ls -td "$SDIR"/*-nixarch-2 | head -1)
 # generation.sh sandbox with the iso scaffolding (initcpio hooks, configs,
 # import-dir payload for nixgen-commit) injected at /run/inject
 [ -n "$GEN1" ] || {
-	cp -r "$REPO/examples/iso" "$TMP/inject"
+	cp -r "$REPO/arch/iso" "$TMP/inject"
 	mkdir "$TMP/inject/payload"
 	cp "$REPO/build/import-dir" "$REPO/build/rm-path" \
 		"$P/lib"/libnixstore.so* \
 		"$P/lib"/libnixutil.so* "$TMP/inject/payload/"
 	# sh -e: run via interpreter ignores the shebang's -e; without it a
 	# failed setup step imports a broken generation instead of aborting
-	INJECT=$TMP/inject examples/generation.sh "$STORE" "$BASE" nixarch-1 \
+	INJECT=$TMP/inject arch/generation.sh "$STORE" "$BASE" nixarch-1 \
 		"sh -e /run/inject/setup-boot.sh"
 	GEN1=$(ls -td "$SDIR"/*-nixarch-1 | head -1)
 }
@@ -61,7 +61,7 @@ echo "gen1: $GEN1"
 
 # --- gen 2: gen1 + one extra package (the rollback demo) ---------------
 [ -n "$GEN2" ] || {
-examples/generation.sh "$STORE" "$GEN1" nixarch-2 \
+arch/generation.sh "$STORE" "$GEN1" nixarch-2 \
 	"pacman -S --noconfirm --needed fastfetch"
 GEN2=$(ls -td "$SDIR"/*-nixarch-2 | head -1)
 }
@@ -111,4 +111,4 @@ EOF
 
 grub-mkrescue -o "$REPO/build/nixarch.iso" "$ISO" -volid "$LABEL"
 ls -lh "$REPO/build/nixarch.iso"
-echo "boot test: examples/iso/boot-test.sh"
+echo "boot test: arch/iso/boot-test.sh"

@@ -80,7 +80,7 @@ PY
 PIN=$(date -d '-30 days' +%Y/%m/%d)
 UPCMD="mv /etc/pacman.d/mirrorlist /tmp/ml && echo \"Server = https://archive.archlinux.org/repos/$PIN/\\\$repo/os/\\\$arch\" > /etc/pacman.d/mirrorlist && pacman -Syy --noconfirm --disable-download-timeout linux tree && mv /tmp/ml /etc/pacman.d/mirrorlist && pacman -Syy --noconfirm"
 
-examples/iso/mkstoredisk.sh
+arch/iso/mkstoredisk.sh
 echo "--- boot 1: ISO + fresh disk, offline kernel version change in the box"
 qemu-system-x86_64 $ACCEL -m 2G -boot d -cdrom build/nixarch.iso \
 	-drive file=build/nixstore.img,format=raw,if=virtio \

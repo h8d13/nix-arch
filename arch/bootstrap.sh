@@ -16,7 +16,7 @@ STORE=$(realpath "$STORE")
 
 P=$REPO/build/prefix
 [ -x "$REPO/build/import-dir" ] || {
-	g++ -std=c++23 -O2 examples/import-dir.cc -o build/import-dir \
+	g++ -std=c++23 -O2 arch/import-dir.cc -o build/import-dir \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
 }
 
@@ -55,7 +55,7 @@ umount "$TMP/root/proc"
 rm -rf "$TMP/root/tmp"/* "$TMP/root/tmp"/.[!.]* "$TMP/root/run"/* 2>/dev/null || true
 find "$TMP/root" \( -type s -o -type p \) -delete
 
-"$REPO/examples/iso/nixgen-savemeta" "$TMP/root"
+"$REPO/arch/iso/nixgen-savemeta" "$TMP/root"
 LD_LIBRARY_PATH=$REPO/build/prefix/lib "$REPO/build/import-dir" \
 	"$STORE" arch-base "$TMP/root"
 EOF

@@ -18,7 +18,7 @@ shift 3
 CMD=${*:-/usr/bin/bash}
 
 [ -x "$REPO/build/import-dir" ] || {
-	g++ -std=c++23 -O2 examples/import-dir.cc -o build/import-dir \
+	g++ -std=c++23 -O2 arch/import-dir.cc -o build/import-dir \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
 }
 
@@ -37,7 +37,7 @@ mount -t overlay overlay \
 # give the merged view the modes the base captured before import
 # (store lower is canonical 0555); see nixgen-savemeta
 if [ -f "$BASE/etc/nixgen/perms" ]; then
-	"$REPO/examples/iso/nixgen-restmeta" "$TMP/mnt"
+	"$REPO/arch/iso/nixgen-restmeta" "$TMP/mnt"
 fi
 mount --rbind /dev "$TMP/mnt/dev"
 mount -t proc proc "$TMP/mnt/proc"
@@ -70,7 +70,7 @@ fi
 rm -rf "$TMP/mnt/tmp"/* "$TMP/mnt/tmp"/.[!.]* "$TMP/mnt/run"/* 2>/dev/null || true
 find "$TMP/mnt" \( -type s -o -type p \) -delete
 
-"$REPO/examples/iso/nixgen-savemeta" "$TMP/mnt"
+"$REPO/arch/iso/nixgen-savemeta" "$TMP/mnt"
 LD_LIBRARY_PATH=$P/lib "$REPO/build/import-dir" "$STORE_ROOT" "$NAME" "$TMP/mnt"
 EOF
 

@@ -24,6 +24,7 @@ builds the *next* generation offline; the running root is never touched.
 | `uefi-vm.sh [disk\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM): flashable disk image or ISO |
 | `tests/boot-test.sh` | headless QEMU smoke-boot of the ISO, PASS on autologin |
 | `tests/update-test.sh` | e2e: kernel upgrade in the box, boot the result from the store disk alone |
+| `tests/meta-test.sh` | host-only: user created in the sandbox survives manifest + restmeta replay |
 
 Inside the box (installed by setup-boot.sh): `nixgen-commit`,
 `-update`, `-switch`, `-remove`, `-listid`, `-diffid`, `-setup`
@@ -101,7 +102,9 @@ disk on a previously-used target.
   every dir and rejects its 0555 cachedir (downloads fall back to
   /tmp = more RAM). generation.sh warns when the base lacks it;
   re-bootstrap to fix. Plain 644-vs-444 file modes stay canonical on
-  purpose (root bypasses them; restoring would copy-up every file).
+  purpose (root bypasses them; restoring would copy-up every file),
+  except /etc/skel: useradd copies its modes to new users, so it is
+  captured whole (tests/meta-test.sh pins this).
 - **Diskless BIOS boots pay ~10s** of GRUB probing for the absent
   NIXSTORE label. Known cost, attached-disk boots don't pay it.
 - **Sparse flashing trusts skipped regions to read zero.** On a

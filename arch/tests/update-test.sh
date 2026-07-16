@@ -162,7 +162,7 @@ drive "NIXARCH BOOT OK" \
 	"AUTO_TTY1" \
 	'systemctl start getty@tty2 && sleep 1 && ps -o args= -C agetty | grep tty2 | grep -q autologin && echo AUTO_TTY2' \
 	"AUTO_TTY2" \
-	'touch /etc/diffmark && ln -s /tmp /var/linktest && chown -h 977:977 /var/linktest && touch /etc/acltest && setfacl -m u:977:r /etc/acltest && nixgen-commit test-sw' \
+	'useradd -m -u 1100 -U tuser && touch /etc/diffmark && ln -s /tmp /var/linktest && chown -h 977:977 /var/linktest && touch /etc/acltest && setfacl -m u:977:r /etc/acltest && nixgen-commit test-sw' \
 	"visible next boot" \
 	"nixgen-switch test-sw" \
 	"-test-sw (soft)" \
@@ -170,6 +170,10 @@ drive "NIXARCH BOOT OK" \
 	"755-1777" \
 	'echo "$(stat -c %u /var/linktest):$(getfacl --numeric /etc/acltest | grep -c "user:977:r--"):$(getcap /usr/bin/newuidmap | grep -c setuid)"' \
 	"977:1:1" \
+	'echo "bashrc=$(stat -c %a:%u:%g /home/tuser/.bashrc)"' \
+	"bashrc=644:1100:1100" \
+	'su - tuser -c "echo mark >> ~/.bashrc"; echo "uwrite=$?"' \
+	"uwrite=0" \
 	"nixgen-remove test-sw" \
 	"refusing to remove the running generation" \
 	"nixgen-listid" \

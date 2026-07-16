@@ -5,11 +5,14 @@
 # Snapshots the merged root via a non-recursive bind (submounts like
 # /proc, /run, /nixstore fall away), imports it content-addressed,
 # appends a GRUB entry on the store disk.
-# usage: nixgen-commit <name>
+# usage: nixgen-commit <name> [store-root]
+#        store-root default /nixstoredev; nixgen-setup passes a freshly
+#        formatted target to seed an install
 NAME=$1
-[ -n "$NAME" ] || { echo "usage: $0 <name>" >&2; exit 1; }
-[ -d /nixstoredev ] || {
-	echo "no writable store: boot with a NIXSTORE disk attached" >&2
+TARGET=${2:-/nixstoredev}
+[ -n "$NAME" ] || { echo "usage: $0 <name> [store-root]" >&2; exit 1; }
+[ -d "$TARGET" ] || {
+	echo "no writable store at $TARGET: boot with a NIXSTORE disk attached" >&2
 	exit 1
 }
 
@@ -24,9 +27,9 @@ find "$SNAP" \( -type s -o -type p \) -print -delete
 
 /usr/local/bin/nixgen-savemeta "$SNAP"
 LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
-	/nixstoredev "$NAME" "$SNAP"
+	"$TARGET" "$NAME" "$SNAP"
 
-NEW=$(ls -td /nixstoredev/nix/store/*-"$NAME" | head -1)
+NEW=$(ls -td "$TARGET"/nix/store/*-"$NAME" | head -1)
 GEN=$(basename "$NEW")
 
 # new entry boots with the same kernel params as the running system,
@@ -34,7 +37,7 @@ GEN=$(basename "$NEW")
 CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
 	| grep -v '^nixgen=\|^nixsource=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
 
-cat >> /nixstoredev/entries.cfg <<EOF
+cat >> "$TARGET/entries.cfg" <<EOF
 menuentry "nixarch: $GEN (committed)" {
 	search --no-floppy --set=nixdev --label NIXSTORE
 	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN nixsource=disk $CMDLINE

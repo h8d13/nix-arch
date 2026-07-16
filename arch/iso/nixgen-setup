@@ -1,0 +1,76 @@
+#!/bin/sh -e
+# Install the running system onto a disk, from inside the box: GPT
+# (ESP + NIXSTORE ext4), standalone UEFI GRUB that only sources
+# entries.cfg from the store partition, fresh store seeded with a
+# commit of the running root. mkbootdisk's layout, built live: shape
+# the system first, install what you actually run. Firmware boots the
+# removable path (EFI/BOOT/BOOTX64.EFI), no NVRAM entry needed.
+# UEFI only, Secure Boot off. Everything on the target is lost; the
+# device path must be typed back. GRUB finds the store by label: if
+# the installer medium is itself a NIXSTORE disk (flashed stick),
+# unplug it before first boot.
+# usage: nixgen-setup <device> [name]   (name default: nixarch-install)
+DEV=$1 NAME=${2:-nixarch-install}
+[ -b "$DEV" ] || { echo "usage: $0 <device> [name]" >&2; exit 1; }
+case $DEV in
+*[0-9]) PART="${DEV}p" ;;
+*) PART="$DEV" ;;
+esac
+
+# covers the running store disk and the boot medium: both are mounted
+if grep -q "^$DEV" /proc/mounts; then
+	echo "refusing: $DEV has mounted partitions" >&2
+	exit 1
+fi
+
+lsblk -dn -o NAME,SIZE,MODEL,TRAN "$DEV"
+printf 'everything on %s will be lost. type the device path to continue: ' "$DEV"
+read -r reply
+[ "$reply" = "$DEV" ] || { echo "aborted"; exit 1; }
+
+sfdisk -q "$DEV" <<EOF
+label: gpt
+start=1MiB, size=64MiB, type=uefi
+start=65MiB, type=linux
+EOF
+udevadm settle --timeout=10
+mkfs.fat -F 32 -n NIXBOOT "${PART}1"
+mkfs.ext4 -q -L NIXSTORE "${PART}2"
+
+T=$(mktemp -d /run/nixgen-setup.XXXXXX)
+cleanup() {
+	for m in "$T/esp" "$T/store"; do
+		if mountpoint -q "$m"; then
+			umount "$m"
+		fi
+	done
+	rm -rf "$T"
+}
+trap cleanup EXIT
+mkdir "$T/esp" "$T/store"
+
+# same embedded config mkbootdisk.sh ships: GRUB's whole job is
+# finding the store partition and deferring to its entries.cfg
+cat > "$T/embed.cfg" <<EOF
+set default=0
+set timeout=5
+insmod part_gpt
+search --no-floppy --set=nixdev --label NIXSTORE
+if [ -n "\$nixdev" ]; then
+	source (\$nixdev)/entries.cfg
+else
+	echo "NIXSTORE partition not found"
+fi
+EOF
+grub-mkstandalone -O x86_64-efi --locales= --themes= \
+	-o "$T/BOOTX64.EFI" "boot/grub/grub.cfg=$T/embed.cfg"
+
+mount "${PART}1" "$T/esp"
+install -D "$T/BOOTX64.EFI" "$T/esp/EFI/BOOT/BOOTX64.EFI"
+umount "$T/esp"
+
+mount "${PART}2" "$T/store"
+/usr/local/bin/nixgen-commit "$NAME" "$T/store"
+umount "$T/store"
+
+echo "installed: $NAME on $DEV (unplug the installer medium, reboot)"

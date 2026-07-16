@@ -47,6 +47,11 @@ Inside the box (installed by setup-boot.sh):
   generations: every added/removed/changed file, content-compared
   (near-free on deduped stores). Subpath = full content diff of that
   subtree. Ownership/mode deltas appear as the etc/nixgen/perms diff.
+- `nixgen-setup <device> [name]`: install onto a disk from inside the
+  box: GPT (ESP + NIXSTORE), standalone GRUB, fresh store seeded with
+  a commit of the running root (mkbootdisk's layout, built live).
+  UEFI only; unplug a NIXSTORE-labeled installer stick before first
+  boot (GRUB searches by label).
 
 ## From nothing
 
@@ -79,6 +84,10 @@ commit to keep that.
 ```
 arch/iso/flashdisk.sh build/archstore /dev/sdX
 ```
+
+Or install from a running box: boot any nixarch medium on the target
+machine, shape the system, then `nixgen-setup /dev/nvmeXn1`: you
+install what you actually run, not a pre-built image.
 
 One command: sizes the image to the disk, builds it, writes it, fscks
 both partitions. It refuses to run until the device path is typed back;

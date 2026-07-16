@@ -10,9 +10,11 @@
 # and check the boot marker, restored permissions, and the new package,
 # then run the rest of the in-box lifecycle: nixgen-remove must refuse
 # the running generation, a committed generation must remove cleanly
-# (store path GC'd, GRUB entry pruned), and nixgen-switch must
-# soft-reboot into a committed generation with the marker (not the
-# stale cmdline) driving running-generation detection afterwards.
+# (store path GC'd, GRUB entry pruned), nixgen-switch must soft-reboot
+# into a committed generation with the marker (not the stale cmdline)
+# driving running-generation detection afterwards, and nixgen-setup
+# must install onto a blank disk that then boots alone under OVMF
+# (boot 3: real firmware, real ESP, the in-box install path).
 # Serial console is a unix socket driven by the embedded python
 # (expect pattern / send line); debugfs reads the ext4 img without root.
 cd "$(dirname "$0")/../.."
@@ -129,11 +131,13 @@ cmp -s build/iso-initrd build/test-initrd \
 echo "kernel version changed, initramfs regenerated"
 
 echo "--- boot 2: new generation from store disk only (no ISO)"
-rm -f "$SOCK"
+rm -f "$SOCK" build/install-test.img
+truncate -s 6G build/install-test.img
 qemu-system-x86_64 $ACCEL -m 2G \
 	-kernel build/test-vmlinuz -initrd build/test-initrd \
 	-append "nixgen=$NEWGEN console=ttyS0,115200" \
 	-drive file=build/nixstore.img,format=raw,if=virtio \
+	-drive file=build/install-test.img,format=raw,if=virtio \
 	-nic user,model=virtio-net-pci \
 	-display none -no-reboot -serial "unix:$SOCK,server,nowait" &
 QPID=$!
@@ -164,11 +168,45 @@ drive "NIXARCH BOOT OK" \
 	"test-sw (running)" \
 	"nixgen-diffid test-up test-sw" \
 	"Only in b/etc: diffmark" \
+	"nixgen-setup /dev/vdb inst-test" \
+	"type the device path to continue" \
+	"/dev/vdb" \
+	"installed: inst-test on /dev/vdb" \
 	'echo root:secret | chpasswd && systemctl restart getty@tty1 && sleep 1 && ps -o args= -C agetty | grep tty1 | grep -qv autologin && echo PROMPT_TTY1' \
 	"PROMPT_TTY1" \
 	"poweroff" > /dev/null || { kill $QPID 2>/dev/null; exit 1; }
 wait $QPID
 rm -f build/iso-vmlinuz build/iso-initrd build/test-vmlinuz build/test-initrd
+
+echo "--- boot 3: installed disk alone under OVMF (nixgen-setup output)"
+OVMF_CODE= OVMF_VARS=
+for pair in \
+	/usr/share/edk2/x64/OVMF_CODE.4m.fd:/usr/share/edk2/x64/OVMF_VARS.4m.fd \
+	/usr/share/edk2-ovmf/x64/OVMF_CODE.fd:/usr/share/edk2-ovmf/x64/OVMF_VARS.fd \
+	/usr/share/OVMF/OVMF_CODE.fd:/usr/share/OVMF/OVMF_VARS.fd; do
+	c=${pair%%:*} v=${pair##*:}
+	if [ -f "$c" ] && [ -f "$v" ]; then
+		OVMF_CODE=$c OVMF_VARS=$v
+		break
+	fi
+done
+[ -n "$OVMF_CODE" ] || { echo "FAIL: no OVMF firmware (edk2-ovmf)"; exit 1; }
+cp "$OVMF_VARS" build/test-ovmf-vars.fd
+rm -f "$SOCK"
+qemu-system-x86_64 $ACCEL -machine q35 -m 2G \
+	-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" \
+	-drive if=pflash,format=raw,file=build/test-ovmf-vars.fd \
+	-drive file=build/install-test.img,format=raw,if=virtio \
+	-nic user,model=virtio-net-pci \
+	-display none -no-reboot -serial "unix:$SOCK,server,nowait" &
+QPID=$!
+drive "NIXARCH BOOT OK" \
+	'grep -o "nixgen=[^ ]*" /proc/cmdline' \
+	"-inst-test" \
+	"poweroff" > /dev/null || { kill $QPID 2>/dev/null; exit 1; }
+wait $QPID
+rm -f build/install-test.img build/test-ovmf-vars.fd
+echo "installed disk booted under OVMF"
 
 grep -aq "nixgen=$NEWGEN" "$LOG" || { echo "FAIL: marker missing"; exit 1; }
 # the removed generation's entry is gone, the surviving one remains
@@ -181,4 +219,5 @@ echo "$ENTRIES" | grep -q "nixgen=$NEWGEN" \
 echo "$ENTRIES" | grep -q -- "-test-sw" \
 	|| { echo "FAIL: test-sw GRUB entry lost"; exit 1; }
 echo "PASS: $NEWGEN booted from disk, kernel changed, perms restored," \
-	"tree installed, remove + soft-switch + getty lifecycle clean"
+	"tree installed, remove + soft-switch + getty lifecycle clean," \
+	"in-box install boots under OVMF"

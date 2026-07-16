@@ -12,13 +12,13 @@
 # /proc/cmdline keeps naming the boot-time generation, so the live one
 # is recorded in /run/nixgen-active (/run survives soft-reboot, fresh
 # on a real boot); nixgen-update/-remove consult it first.
-# usage: nixgen-switch <name|store-path-basename>
+# usage: nixgen-switch <name|id>
 NAME=$1
-[ -n "$NAME" ] || { echo "usage: $0 <name|store-path-basename>" >&2; exit 1; }
+[ -n "$NAME" ] || { echo "usage: $0 <name|id>" >&2; exit 1; }
 
-# resolve in the visible stores: exact basename first, then unique
-# *-<name> match. Both roots can alias the same store (disk boot), so
-# the first store dir with a match wins
+# resolve in the visible stores: exact basename, then unique *-<name>,
+# then unique hash prefix (nixgen-listid ids). Both roots can alias the
+# same store (disk boot), so the first store dir with a match wins
 LOWER= STOREDIR=
 for S in /nixstore /nixstoredev/nix/store; do
 	[ -d "$S" ] || continue
@@ -31,8 +31,14 @@ for S in /nixstore /nixstoredev/nix/store; do
 		[ -d "$m" ] || continue
 		n=$((n + 1)) LOWER=$m STOREDIR=$S
 	done
+	if [ "$n" -eq 0 ]; then
+		for m in "$S/$NAME"*; do
+			[ -d "$m" ] || continue
+			n=$((n + 1)) LOWER=$m STOREDIR=$S
+		done
+	fi
 	if [ "$n" -gt 1 ]; then
-		echo "ambiguous name '$NAME' ($n matches in $S), use the full basename" >&2
+		echo "ambiguous '$NAME' ($n matches in $S), use the full basename" >&2
 		exit 1
 	fi
 	[ "$n" -eq 0 ] || break

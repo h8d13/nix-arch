@@ -7,15 +7,15 @@
 # summary. Ownership/mode deltas ride along as a text diff of
 # etc/nixgen/perms; package delta is the /var/lib/pacman/local lines
 # (or pacman --dbpath <gen>/var/lib/pacman -Q on either tree).
-# usage: nixgen-diffid <name|basename> <name|basename> [subpath]
+# usage: nixgen-diffid <name|id> <name|id> [subpath]
 [ -n "$2" ] || {
-	echo "usage: $0 <name|basename> <name|basename> [subpath]" >&2
+	echo "usage: $0 <name|id> <name|id> [subpath]" >&2
 	exit 1
 }
 
-# same resolution as nixgen-switch: exact basename first, then unique
-# *-<name> match; first store dir with a match wins (disk boot aliases
-# /nixstore and /nixstoredev)
+# same resolution as nixgen-switch: exact basename, then unique
+# *-<name>, then unique hash prefix (nixgen-listid ids); first store
+# dir with a match wins (disk boot aliases /nixstore and /nixstoredev)
 resolve() {
 	for S in /nixstore /nixstoredev/nix/store; do
 		[ -d "$S" ] || continue
@@ -28,8 +28,14 @@ resolve() {
 			[ -d "$m" ] || continue
 			n=$((n + 1)) hit=$m
 		done
+		if [ "$n" -eq 0 ]; then
+			for m in "$S/$1"*; do
+				[ -d "$m" ] || continue
+				n=$((n + 1)) hit=$m
+			done
+		fi
 		if [ "$n" -gt 1 ]; then
-			echo "ambiguous name '$1' ($n matches in $S), use the full basename" >&2
+			echo "ambiguous '$1' ($n matches in $S), use the full basename" >&2
 			return 1
 		fi
 		if [ "$n" -eq 1 ]; then

@@ -43,7 +43,9 @@ COMMANDS
 
        nixgen-listid
               Generations visible to the box: short hash id, source
-              (disk/iso), running marker.
+              (disk/iso), running marker. Ids are accepted by -switch,
+              -remove and -diffid as unique hash prefixes: reference a
+              generation by id when names collide.
 
        nixgen-diffid <name> <name> [subpath]
               Systemwide diff of two generations: every added/removed/

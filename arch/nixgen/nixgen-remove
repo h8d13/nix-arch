@@ -5,8 +5,8 @@
 # prune their GRUB entries from entries.cfg. The running generation is
 # refused; generations living only in the ISO squashfs are untouchable
 # here anyway (read-only store).
-# usage: nixgen-remove <store-path-basename>...
-[ $# -ge 1 ] || { echo "usage: $0 <store-path-basename>..." >&2; exit 1; }
+# usage: nixgen-remove <name|id>...
+[ $# -ge 1 ] || { echo "usage: $0 <name|id>..." >&2; exit 1; }
 [ -d /nixstoredev ] || {
 	echo "no writable store: boot with a NIXSTORE disk attached" >&2
 	exit 1
@@ -21,8 +21,9 @@ fi
 
 rc=0
 for GEN in "$@"; do
-	# bare names (the <name> given at import) resolve to <hash>-<name>
-	# when exactly one generation on the disk matches
+	# bare names (the <name> given at import) and hash prefixes
+	# (nixgen-listid ids) resolve to <hash>-<name> when exactly one
+	# generation on the disk matches
 	if [ ! -d "/nixstoredev/nix/store/$GEN" ]; then
 		n=0
 		for m in /nixstoredev/nix/store/*-"$GEN"; do
@@ -31,6 +32,14 @@ for GEN in "$@"; do
 				match=${m##*/}
 			fi
 		done
+		if [ "$n" -eq 0 ]; then
+			for m in "/nixstoredev/nix/store/$GEN"*; do
+				if [ -d "$m" ]; then
+					n=$((n + 1))
+					match=${m##*/}
+				fi
+			done
+		fi
 		if [ "$n" -eq 1 ]; then
 			GEN=$match
 		elif [ "$n" -gt 1 ]; then

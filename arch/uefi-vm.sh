@@ -11,7 +11,7 @@
 #                   store disk when present
 #   clean           remove the persistent NVRAM vars
 # env: RAM (2G), CPUS (2), DISPLAY_BACKEND (gtk), IMG/ISO overrides
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 
 RAM=${RAM:-2G} CPUS=${CPUS:-2}
 DISPLAY_BACKEND=${DISPLAY_BACKEND:-gtk}

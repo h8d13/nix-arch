@@ -51,7 +51,7 @@ mount -t overlay overlay \
 # give the merged view the modes the base captured before import
 # (store lower is canonical 0555); see nixgen-savemeta
 if [ -f "$BASE/etc/nixgen/perms" ]; then
-	"$REPO/arch/iso/nixgen-restmeta" "$TMP/mnt"
+	"$REPO/arch/nixgen/nixgen-restmeta" "$TMP/mnt"
 else
 	echo "WARN: $BASE has no etc/nixgen/perms; canonical 0555 modes" \
 		"stay, pacman will warn (re-bootstrap the base)" >&2
@@ -102,7 +102,7 @@ fi
 # /tmp and /run were namespace tmpfs, nothing of them is in the upper
 find "$TMP/mnt" \( -type s -o -type p \) -delete
 
-"$REPO/arch/iso/nixgen-savemeta" "$TMP/mnt"
+"$REPO/arch/nixgen/nixgen-savemeta" "$TMP/mnt"
 LD_LIBRARY_PATH=$P/lib "$REPO/build/import-dir" "$STORE_ROOT" "$NAME" "$TMP/mnt"
 EOF
 

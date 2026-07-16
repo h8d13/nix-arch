@@ -73,7 +73,7 @@ umount "$TMP/root/proc" "$TMP/root/run" "$TMP/root/tmp"
 # gpg-agent leaves sockets in etc/pacman.d/gnupg; NAR can't hold them
 find "$TMP/root" \( -type s -o -type p \) -delete
 
-"$REPO/arch/iso/nixgen-savemeta" "$TMP/root"
+"$REPO/arch/nixgen/nixgen-savemeta" "$TMP/root"
 LD_LIBRARY_PATH=$REPO/build/prefix/lib "$REPO/build/import-dir" \
 	"$STORE" arch-base "$TMP/root"
 EOF

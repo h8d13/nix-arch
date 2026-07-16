@@ -45,10 +45,15 @@ for g in "$SDIR"/*-nixarch-1; do
 done
 
 # --- gen 1: base + kernel + nixgen hook -------------------------------
-# generation.sh sandbox with the iso scaffolding (initcpio hooks, configs,
-# import-dir payload for nixgen-commit) injected at /run/inject
+# generation.sh sandbox with the box tooling (arch/nixgen) and iso
+# scaffolding (initcpio hooks, config, import-dir payload) injected at
+# /run/inject
 [ -n "$GEN1" ] || {
-	cp -r "$REPO/arch/iso" "$TMP/inject"
+	mkdir "$TMP/inject"
+	cp "$REPO"/arch/nixgen/nixgen-* "$TMP/inject/"
+	cp "$REPO/arch/iso/setup-boot.sh" "$REPO/arch/iso/mkinitcpio.conf" \
+		"$REPO/arch/iso/initcpio-hook-nixgen" \
+		"$REPO/arch/iso/initcpio-install-nixgen" "$TMP/inject/"
 	mkdir "$TMP/inject/payload"
 	cp "$REPO/build/import-dir" "$REPO/build/rm-path" \
 		"$P/lib"/libnixstore.so* \
@@ -100,4 +105,4 @@ EOF
 
 grub-mkrescue -o "$REPO/build/nixarch.iso" "$ISO" -volid "$LABEL"
 ls -lh "$REPO/build/nixarch.iso"
-echo "boot test: arch/iso/boot-test.sh"
+echo "boot test: arch/tests/boot-test.sh"

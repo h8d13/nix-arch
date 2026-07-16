@@ -21,15 +21,15 @@ builds the *next* generation offline; the running root is never touched.
 | `iso/mkstoredisk.sh [img] [size]` | blank ext4 disk (label NIXSTORE); attached, it persists committed generations |
 | `iso/mkbootdisk.sh <store-root> [img] [MiB]` | standalone bootable disk image (UEFI, no ISO): GRUB ESP + seeded store partition |
 | `iso/flashdisk.sh <store-root> <device>` | one-shot flash: sizes image to the disk, builds, writes, fscks both partitions |
-| `iso/uefi-vm.sh [disk\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM): flashable disk image or ISO |
-| `iso/boot-test.sh` | headless QEMU smoke-boot of the ISO, PASS on autologin |
-| `iso/update-test.sh` | e2e: kernel upgrade in the box, boot the result from the store disk alone |
+| `uefi-vm.sh [disk\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM): flashable disk image or ISO |
+| `tests/boot-test.sh` | headless QEMU smoke-boot of the ISO, PASS on autologin |
+| `tests/update-test.sh` | e2e: kernel upgrade in the box, boot the result from the store disk alone |
 
 Inside the box (installed by setup-boot.sh): `nixgen-commit`,
 `-update`, `-switch`, `-remove`, `-listid`, `-diffid`, `-setup`
 (install to disk), `-help`. The reference is `nixgen-help` (source:
-[iso/nixgen-help](iso/nixgen-help), drift-checked by update-test:
-every installed nixgen-* must appear in it).
+[nixgen/nixgen-help](nixgen/nixgen-help), drift-checked by
+update-test: every installed nixgen-* must appear in it).
 
 ## From nothing
 

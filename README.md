@@ -34,7 +34,7 @@ generation offline, rollback is booting an older GRUB entry.
 ./build.sh                                       # store libs into build/prefix
 arch/bootstrap.sh build/archstore                # base generation (prints <base>)
 arch/iso/mkiso.sh build/archstore <base>         # bootable ISO
-arch/iso/uefi-vm.sh iso                          # try it in QEMU (UEFI)
+arch/uefi-vm.sh iso                              # try it in QEMU (UEFI)
 arch/iso/flashdisk.sh build/archstore /dev/sdX   # flash to hardware
 ```
 

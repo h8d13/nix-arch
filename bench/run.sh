@@ -1,12 +1,18 @@
 #!/bin/sh -e
-# Build + run dedup benchmark against build/prefix libs.
-# usage: bench/run.sh [npaths] [files-per-path] [content-pool]
+# Build + run benchmarks against build/prefix libs.
+# bench-optimise: whole-store dedup walk (cold link-creation, warm scan)
+# bench-import: the arch/ hot path, capture on vs off (see BASELINE)
+# Synthetic + small: quick smoke only. Real-world numbers (full rootfs,
+# target media) come from bench/run-real.sh.
+# usage: bench/run.sh [npaths] [files-per-path] [content-pool] [warm-loops]
 cd "$(dirname "$0")/.."
 P=$PWD/build/prefix
 export PKG_CONFIG_PATH="$P/lib/pkgconfig"
 
-g++ -std=c++23 -O2 bench/bench-optimise.cc -o build/bench-optimise \
-	$(pkg-config --cflags --libs nix-store nix-util)
+for b in bench-optimise bench-import; do
+	g++ -std=c++23 -O2 "bench/$b.cc" -o "build/$b" \
+		$(pkg-config --cflags --libs nix-store nix-util)
+done
 
 # disk-backed, not /tmp: 1M-file runs overflow tmpfs
 ROOT=$(mktemp -d "$PWD/build/bench-root.XXXXXX")
@@ -14,3 +20,5 @@ ROOT=$(mktemp -d "$PWD/build/bench-root.XXXXXX")
 trap 'chmod -R u+w "$ROOT" && rm -rf "$ROOT"' EXIT
 # PERF="perf record -g -o file.data" to profile
 LD_LIBRARY_PATH=$P/lib $PERF build/bench-optimise "$ROOT" "${1:-200}" "${2:-500}" "${3:-5000}" "${4:-1}"
+echo
+LD_LIBRARY_PATH=$P/lib build/bench-import "$ROOT/import"

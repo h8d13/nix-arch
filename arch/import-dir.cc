@@ -3,6 +3,9 @@
 // farm. Only the new path is optimised (older paths are already
 // farm-linked), using per-file hashes captured while the import
 // streamed through, so nothing is read twice.
+// stdout is exactly the imported store path (store mtimes are all
+// canonicalised to 1, so callers must capture it instead of picking
+// the "newest" by mtime); diagnostics go to stderr.
 // usage: import-dir <store-root> <name> <dir>
 #include <chrono>
 #include <cstdio>
@@ -54,11 +57,11 @@ int main(int argc, char ** argv)
 	}
 	auto path = *imported;
 	auto t1 = std::chrono::steady_clock::now();
-	printf("imported: %s (%.1f s)\n", store->printStorePath(path).c_str(),
+	fprintf(stderr, "imported: %s (%.1f s)\n", store->printStorePath(path).c_str(),
 		std::chrono::duration<double>(t1 - t0).count());
 
 	auto info = store->queryPathInfo(path);
-	printf("nar hash: %s\nnar size: %.1f MiB\n",
+	fprintf(stderr, "nar hash: %s\nnar size: %.1f MiB\n",
 		info->narHash.to_string(HashFormat::SRI, true).c_str(),
 		info->narSize / (1024.0 * 1024.0));
 
@@ -66,8 +69,11 @@ int main(int argc, char ** argv)
 	auto t2 = std::chrono::steady_clock::now();
 	local->optimisePath(path, stats, &fileHashes);
 	auto t3 = std::chrono::steady_clock::now();
-	printf("optimise: linked %lu files, freed %.1f MiB (%.1f s)\n",
+	fprintf(stderr, "optimise: linked %lu files, freed %.1f MiB (%.1f s)\n",
 		stats.filesLinked, stats.bytesFreed / (1024.0 * 1024.0),
 		std::chrono::duration<double>(t3 - t2).count());
+
+	/* real (root-prefixed) path: callers use it as a directory */
+	printf("%s\n", local->toRealPath(path).c_str());
 	return 0;
 }

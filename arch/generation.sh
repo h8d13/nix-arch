@@ -8,6 +8,9 @@
 #        cmd defaults to an interactive shell.
 #        env INJECT=<dir>: copied to /run/inject inside the sandbox
 #        (visible to cmd, scrubbed with the rest of /run before import).
+#        env GENOUT=<file>: the imported store path is written there
+#        (stdout belongs to cmd; globbing the store by name is ambiguous
+#        on reuse and mtimes are canonicalised, so no ls -t either).
 cd "$(dirname "$0")/.."
 REPO=$PWD
 P=$REPO/build/prefix
@@ -110,7 +113,10 @@ fi
 find "$TMP/mnt" \( -type s -o -type p \) -delete
 
 "$REPO/arch/nixgen/nixgen-savemeta" "$TMP/mnt"
-LD_LIBRARY_PATH=$P/lib "$REPO/build/import-dir" "$STORE_ROOT" "$NAME" "$TMP/mnt"
+LD_LIBRARY_PATH=$P/lib "$REPO/build/import-dir" "$STORE_ROOT" "$NAME" "$TMP/mnt" \
+	> "$TMP/imported"
 EOF
 
 $UNSHARE -mpf --kill-child sh "$TMP/inner.sh"
+
+[ -z "$GENOUT" ] || cp "$TMP/imported" "$GENOUT"

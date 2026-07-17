@@ -54,6 +54,17 @@ COMMANDS
               Ownership/mode deltas appear as the etc/nixgen/perms
               diff.
 
+       nixgen-send <name|id>... > bundle
+              Stream committed generations in export wire format
+              (nix-store --export compatible), re-hashed against the
+              db on the way out so local corruption cannot spread.
+              Pipe to ssh for box-to-box shipping.
+
+       nixgen-recv < bundle
+              Receive a bundle: CA-verified import (content must hash
+              back to its claimed store path), dedup, GRUB entry per
+              generation that carries a kernel. Idempotent.
+
        nixgen-setup <device> [name]
               Install onto a disk from inside the box: GPT (ESP +
               NIXSTORE), standalone GRUB, fresh store seeded with a

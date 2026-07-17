@@ -59,6 +59,8 @@ EOF
 install -d /usr/local/bin /usr/local/lib
 install -m755 "$I/payload/import-dir" /usr/local/bin/import-dir
 install -m755 "$I/payload/rm-path" /usr/local/bin/rm-path
+install -m755 "$I/payload/export-path" /usr/local/bin/export-path
+install -m755 "$I/payload/import-path" /usr/local/bin/import-path
 cp -P "$I"/payload/libnix*.so* /usr/local/lib/
 install -m755 "$I/nixgen-commit" /usr/local/bin/nixgen-commit
 install -m755 "$I/nixgen-remove" /usr/local/bin/nixgen-remove
@@ -67,6 +69,8 @@ install -m755 "$I/nixgen-switch" /usr/local/bin/nixgen-switch
 install -m755 "$I/nixgen-listid" /usr/local/bin/nixgen-listid
 install -m755 "$I/nixgen-diffid" /usr/local/bin/nixgen-diffid
 install -m755 "$I/nixgen-setup" /usr/local/bin/nixgen-setup
+install -m755 "$I/nixgen-send" /usr/local/bin/nixgen-send
+install -m755 "$I/nixgen-recv" /usr/local/bin/nixgen-recv
 install -m755 "$I/nixgen-help" /usr/local/bin/nixgen-help
 install -m755 "$I/nixgen-savemeta" /usr/local/bin/nixgen-savemeta
 install -m755 "$I/nixgen-restmeta" /usr/local/bin/nixgen-restmeta

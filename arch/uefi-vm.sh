@@ -42,7 +42,11 @@ disk)
 	;;
 iso)
 	[ -f "$ISO" ] || { echo "no $ISO: run arch/iso/mkiso.sh first" >&2; exit 1; }
-	DRIVES="-cdrom $ISO"
+	# explicit bootindex: NVRAM boot entries from earlier disk-mode
+	# runs otherwise shadow the DVD (OVMF walks stale entries into a
+	# PXE loop and never falls back to the cdrom)
+	DRIVES="-drive if=none,id=cd,file=$ISO,format=raw,media=cdrom"
+	DRIVES="$DRIVES -device ide-cd,drive=cd,bootindex=0"
 	if [ -f build/nixstore.img ]; then
 		DRIVES="$DRIVES -drive file=build/nixstore.img,format=raw,if=virtio"
 	fi

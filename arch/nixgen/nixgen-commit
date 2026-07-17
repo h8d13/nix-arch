@@ -26,10 +26,10 @@ trap 'umount "$SNAP"' EXIT
 find "$SNAP" \( -type s -o -type p \) -print -delete
 
 /usr/local/bin/nixgen-savemeta "$SNAP"
-LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
-	"$TARGET" "$NAME" "$SNAP"
-
-NEW=$(ls -td "$TARGET"/nix/store/*-"$NAME" | head -1)
+# import-dir stdout is exactly the store path; mtime-based selection
+# (ls -t) cannot work, every store path's mtime is canonicalised to 1
+NEW=$(LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
+	"$TARGET" "$NAME" "$SNAP")
 GEN=$(basename "$NEW")
 
 # new entry boots with the same kernel params as the running system,

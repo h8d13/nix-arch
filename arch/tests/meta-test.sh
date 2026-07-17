@@ -15,8 +15,31 @@ REPO=$PWD
 P=$REPO/build/prefix
 STORE=$(realpath "${1:-build/archstore}")
 
-BASE=$(ls -td "$STORE"/nix/store/*-arch-base | head -1)
-[ -d "$BASE" ] || { echo "no arch-base in $STORE (run arch/bootstrap.sh)" >&2; exit 1; }
+# mtimes are canonicalised store-wide, no "newest" to pick: exactly one
+BASE=
+for g in "$STORE"/nix/store/*-arch-base; do
+	[ -d "$g" ] || continue
+	[ -z "$BASE" ] || {
+		echo "multiple arch-base paths in $STORE, remove stale ones first:" >&2
+		ls -d "$STORE"/nix/store/*-arch-base >&2
+		exit 1
+	}
+	BASE=$g
+done
+[ -n "$BASE" ] || { echo "no arch-base in $STORE (run arch/bootstrap.sh)" >&2; exit 1; }
+
+# skel templates must be captured writable (644) in the base manifest.
+# A base without these rows leaves /etc/skel canonical 0444 at runtime
+# and every useradd -m on every descendant install mints read-only
+# dotfiles, frozen by the next commit (happened: base artifact predated
+# the skel-capture fix). Fail before building generations on it.
+for f in .bashrc .bash_profile .bash_logout; do
+	grep -q "^f	644	0	0	\./etc/skel/$f\$" "$BASE/etc/nixgen/perms" || {
+		echo "FAIL: $BASE manifest lacks 644 row for etc/skel/$f;" \
+			"stale base, re-run arch/bootstrap.sh" >&2
+		exit 1
+	}
+done
 
 UNSHARE="unshare --map-auto --map-root-user"
 $UNSHARE true || {
@@ -46,9 +69,12 @@ trap cleanup EXIT
 BASHRC='^f	644	1100	1100	\./home/tuser/\.bashrc$'
 HOMEDIR='^d	[0-7]*	1100	1100	\./home/tuser$'
 
+TMP=$(mktemp -d "$REPO/build/meta.XXXXXX")
+
 echo "--- gen A: useradd in a sandbox on $(basename "$BASE")"
-arch/generation.sh "$STORE" "$BASE" meta-a 'useradd -m -u 1100 -U tuser'
-GENA=$(ls -td "$STORE"/nix/store/*-meta-a | head -1)
+GENOUT=$TMP/gena arch/generation.sh "$STORE" "$BASE" meta-a \
+	'useradd -m -u 1100 -U tuser'
+GENA=$(cat "$TMP/gena")
 grep -q "$BASHRC" "$GENA/etc/nixgen/perms" || {
 	echo "FAIL: savemeta dropped the fresh .bashrc row; tuser rows in A:" >&2
 	grep 'tuser' "$GENA/etc/nixgen/perms" >&2 || echo "(none)" >&2
@@ -56,8 +82,8 @@ grep -q "$BASHRC" "$GENA/etc/nixgen/perms" || {
 }
 
 echo "--- gen B: no-op rebuild on A (restmeta -> savemeta round-trip)"
-arch/generation.sh "$STORE" "$GENA" meta-b 'true'
-GENB=$(ls -td "$STORE"/nix/store/*-meta-b | head -1)
+GENOUT=$TMP/genb arch/generation.sh "$STORE" "$GENA" meta-b 'true'
+GENB=$(cat "$TMP/genb")
 M=$GENB/etc/nixgen/perms
 
 # every row typed 5-field; offenders print with line numbers
@@ -77,7 +103,6 @@ grep -q "$HOMEDIR" "$M" || {
 echo "manifest rows survived the rebuild"
 
 echo "--- replay: restmeta over an overlay of gen B"
-TMP=$(mktemp -d "$REPO/build/meta.XXXXXX")
 mkdir "$TMP/upper" "$TMP/work" "$TMP/mnt"
 cat > "$TMP/inner.sh" <<EOF
 set -e

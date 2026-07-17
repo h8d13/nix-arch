@@ -1,0 +1,52 @@
+# Bench baseline. Refresh whenever optimise/import internals change
+# (rerun the exact commands below, replace numbers, note the machine).
+# Regressions are judged against this file, not against memory.
+
+machine: i5-14600KF (20 threads), ext4, linux 7.1.3-arch1-3
+date: 2026-07-17
+
+## bench/run.sh 400 2000 5000 1   (800k files, 194 MiB dedupable)
+
+populate (addToStore)    17.120 s
+optimise pass1 (cold)     8.929 s   linked 794600 files
+optimise pass2 (warm)     0.014 s   linked 0
+
+History: serial optimiseStore (pre thread-pool, same params, same
+machine) cold pass was ~9-12 s; the parallel win on this box is
+bounded by link-farm creation, not scanning. Commit 01ad51c holds the
+original 1000x1000x100k serial capture: populate 14.1 s, cold 23.0 s.
+
+## build/bench-import <root> 20000 32 10000   (640 MiB tree, 43% dup)
+
+import (capture off)     0.487 s
+optimise (capture off)   0.568 s   linked 11366
+import (capture on)      0.577 s   linked 11366
+optimise (capture on)    0.213 s
+
+Capture trades ~0.09 s at import (second hash thread) for ~2.7x
+faster optimise (no content re-read); linked counts must match
+on/off, a divergence means the captured hashes drifted (see
+tests/import-hashes.cc).
+
+## bench/run-real.sh   (arch-base: 582 MiB, 33k entries, NVMe ext4)
+
+capture off/on (cold farm)  import 0.917 / 0.921 s
+                            optimise 0.556 / 0.247 s   linked 9731
+fresh install (import-dir)  wall 1.5 s
+update, 1-file variant      wall 1.3 s   linked 31704, freed 545.6 MiB
+
+The update phase is the on-box nixgen-update/commit hot path. Cost
+per duplicate file is two journaled metadata writes (farm hardlink +
+atomic rename); NVMe does ~10 us/op, USB-class flash ~1-2 ms/op, so
+the same 33k-file generation that optimises in 0.3 s here takes tens
+of seconds on a stick. That is media, not code: to measure a box,
+run with the work dir on the target medium:
+  bench/run-real.sh <tree> /path/on/that/medium
+
+## bench/run.sh (defaults: 200 500 5000, quick smoke)
+
+populate (addToStore)     2.044 s
+optimise pass1 (cold)     0.938 s   linked 94800
+optimise pass2 (warm)     0.003 s
+import (capture off/on)   0.129 / 0.153 s
+optimise (capture off/on) 0.127 / 0.044 s   linked 2847 both

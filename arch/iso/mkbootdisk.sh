@@ -24,7 +24,18 @@ STORE=$1 IMG=${2:-$REPO/build/nixarch-disk.img} SIZE=${3:-4096}
 STORE=$(realpath "$STORE")
 SDIR=$STORE/nix/store
 
-GEN1=$(ls -td "$SDIR"/*-nixarch-1 | head -1)
+# store mtimes are canonicalised (all 1), so there is no "newest" to
+# pick with ls -t: require exactly one match
+GEN1=
+for g in "$SDIR"/*-nixarch-1; do
+	[ -d "$g" ] || continue
+	[ -z "$GEN1" ] || {
+		echo "multiple nixarch-1 generations in $SDIR, remove stale ones first:" >&2
+		ls -d "$SDIR"/*-nixarch-1 >&2
+		exit 1
+	}
+	GEN1=$g
+done
 [ -n "$GEN1" ] || {
 	echo "no nixarch generation in $SDIR: run iso/mkiso.sh first" >&2
 	exit 1

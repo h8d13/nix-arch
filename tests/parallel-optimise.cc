@@ -99,11 +99,14 @@ int main(int argc, char ** argv)
 				std::string(pool[rng() % pool.size()]));
 		}
 		acc->addFile(CanonPath("top"), fmt("unique-%d", p));
+		// identical empty content in every path: must never dedup
+		// (empty-file skip; welding runtime-mutable paths is the hazard)
+		acc->addFile(CanonPath("d0/empty"), "");
 		store->addToStore(fmt("t%d", p), {acc, CanonPath::root});
 	}
 
 	auto expected = walkStore(storeDir);
-	ok(expected.size() == 40 * 51, "populated store",
+	ok(expected.size() == 40 * 52, "populated store",
 		fmt("%d files", expected.size()));
 
 	/* Two full optimise runs racing each other, plus a chaos thread
@@ -156,14 +159,22 @@ int main(int argc, char ** argv)
 
 	ok(walkStore(storeDir) == expected, "contents intact after converge");
 
-	/* Full dedup: every content group collapsed to one inode. */
+	/* Full dedup: every non-empty content group collapsed to one
+	   inode; empty files are exempt by design (never farmed). */
 	std::map<std::string, std::set<ino_t>> groups;
 	bool statFailed = false;
+	unsigned emptyLinked = 0, emptyFiles = 0;
 	for (auto & [p, content] : after) {
 		struct stat st;
-		if (::lstat(p.c_str(), &st) != 0)
+		if (::lstat(p.c_str(), &st) != 0) {
 			statFailed = true;
-		else
+			continue;
+		}
+		if (content.empty()) {
+			emptyFiles++;
+			if (st.st_nlink != 1)
+				emptyLinked++;
+		} else
 			groups[content].insert(st.st_ino);
 	}
 	unsigned multi = 0;
@@ -172,6 +183,17 @@ int main(int argc, char ** argv)
 			multi++;
 	ok(!statFailed && multi == 0, "full dedup: one inode per distinct content",
 		fmt("%d groups with >1 inode", multi));
+	ok(emptyFiles == 40 && emptyLinked == 0,
+		"empty files stay unlinked (nlink 1 each)",
+		fmt("%d empty seen, %d hard-linked", emptyFiles, emptyLinked));
+
+	/* and the farm never took an empty entry */
+	unsigned zeroLinks = 0;
+	for (auto & ent : fs::directory_iterator(linksDir))
+		if (ent.is_regular_file() && ent.file_size() == 0)
+			zeroLinks++;
+	ok(zeroLinks == 0, "link farm holds no empty entries",
+		fmt("%d zero-size entries", zeroLinks));
 
 	/* Permissions restored: nothing writable below store paths. */
 	unsigned writable = 0;

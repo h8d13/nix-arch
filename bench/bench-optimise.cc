@@ -73,8 +73,12 @@ int main(int argc, char ** argv)
 	printf("  linked %lu files, freed %.1f MiB\n",
 		s1.filesLinked, s1.bytesFreed / (1024.0 * 1024.0));
 	timed("optimise pass2 (warm)", [&] {
-		for (unsigned i = 0; i < warmLoops; i++)
-			local->optimiseStore(s2);
+		for (unsigned i = 0; i < warmLoops; i++) {
+			// fresh stats per loop: report the last pass, not a sum
+			OptimiseStats s;
+			local->optimiseStore(s);
+			s2 = s;
+		}
 	});
 	printf("  linked %lu files, freed %.1f MiB\n",
 		s2.filesLinked, s2.bytesFreed / (1024.0 * 1024.0));

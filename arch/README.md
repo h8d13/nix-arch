@@ -16,7 +16,9 @@ builds the *next* generation offline; the running root is never touched.
 | `import-dir <store-root> <name> <dir>` | commit any tree as a generation + dedup |
 | `generation.sh <store-root> <base> <name> [cmd]` | mutate base in an overlay sandbox, import result as new generation |
 | `enter.sh <base> [cmd]` | same sandbox, throwaway: writes evaporate |
-| `rm-path <store-root> <basename>...` | delete generations, disk + db via GC; refuses referenced paths. Never `rm -rf` inside a store |
+| `rm-path <store-root> <basename>...` | delete generations, disk + db via GC; refuses referenced paths, prunes orphaned `.links`. Never `rm -rf` inside a store |
+| `export-path <store-root> <basename>... > bundle` | stream generations in `nix-store --export` wire format; re-hashes against the db so local corruption cannot spread |
+| `import-path <store-root> < bundle` | receive a bundle on another machine + dedup; recomputes the CA store path from the received bytes, refuses mismatches |
 | `iso/mkiso.sh <store-root> <base>` | bootable ISO: squashed store + GRUB entry per generation |
 | `iso/mkstoredisk.sh [img] [size]` | blank ext4 disk (label NIXSTORE); attached, it persists committed generations |
 | `iso/mkbootdisk.sh <store-root> [img] [MiB]` | standalone bootable disk image (UEFI, no ISO): GRUB ESP + seeded store partition |
@@ -27,7 +29,8 @@ builds the *next* generation offline; the running root is never touched.
 | `tests/meta-test.sh` | host-only: user created in the sandbox survives manifest + restmeta replay |
 
 Inside the box (installed by setup-boot.sh): `nixgen-commit`,
-`-update`, `-switch`, `-remove`, `-listid`, `-diffid`, `-setup`
+`-update`, `-switch`, `-remove`, `-listid`, `-diffid`, `-setup`,
+`-send`, `-recv`
 (install to disk), `-help`. The reference is `nixgen-help` (source:
 [nixgen/nixgen-help](nixgen/nixgen-help), drift-checked by
 update-test: every installed nixgen-* must appear in it).

@@ -16,14 +16,10 @@ SDIR=$STORE/nix/store
 LABEL=NIXISO
 
 P=$REPO/build/prefix
-[ -x "$REPO/build/rm-path" ] || {
-	g++ -std=c++23 -O2 arch/rm-path.cc -o build/rm-path \
+for t in rm-path import-dir export-path import-path; do
+	[ -x "$REPO/build/$t" ] || g++ -std=c++23 -O2 "arch/$t.cc" -o "build/$t" \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
-}
-[ -x "$REPO/build/import-dir" ] || {
-	g++ -std=c++23 -O2 arch/import-dir.cc -o build/import-dir \
-		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
-}
+done
 
 TMP=$(mktemp -d "$REPO/build/iso.XXXXXX")
 trap 'unshare -r rm -rf "$TMP"' EXIT
@@ -38,9 +34,16 @@ if [ -n "$REBUILD" ]; then
 			"$STORE" "$(basename "$g")"
 	done
 fi
+# name reuse means several *-nixarch-1 paths can coexist (mtimes are
+# canonicalised, no "newest" to pick): refuse to guess
 GEN1=
 for g in "$SDIR"/*-nixarch-1; do
 	[ -d "$g" ] || continue
+	[ -z "$GEN1" ] || {
+		echo "multiple nixarch-1 generations in $SDIR, REBUILD=1 to clear:" >&2
+		ls -d "$SDIR"/*-nixarch-1 >&2
+		exit 1
+	}
 	GEN1=$g
 done
 
@@ -56,13 +59,14 @@ done
 		"$REPO/arch/iso/initcpio-install-nixgen" "$TMP/inject/"
 	mkdir "$TMP/inject/payload"
 	cp "$REPO/build/import-dir" "$REPO/build/rm-path" \
+		"$REPO/build/export-path" "$REPO/build/import-path" \
 		"$P/lib"/libnixstore.so* \
 		"$P/lib"/libnixutil.so* "$TMP/inject/payload/"
 	# sh -e: run via interpreter ignores the shebang's -e; without it a
 	# failed setup step imports a broken generation instead of aborting
-	INJECT=$TMP/inject arch/generation.sh "$STORE" "$BASE" nixarch-1 \
-		"sh -e /run/inject/setup-boot.sh"
-	GEN1=$(ls -td "$SDIR"/*-nixarch-1 | head -1)
+	INJECT=$TMP/inject GENOUT=$TMP/gen1path arch/generation.sh \
+		"$STORE" "$BASE" nixarch-1 "sh -e /run/inject/setup-boot.sh"
+	GEN1=$(cat "$TMP/gen1path")
 }
 echo "gen1: $GEN1"
 

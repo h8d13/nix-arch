@@ -72,12 +72,15 @@ rm -rf "$SCRATCH/mnt/tmp"/* "$SCRATCH/mnt/tmp"/.[!.]* "$SCRATCH/mnt/run"/* \
 find "$SCRATCH/mnt" \( -type s -o -type p \) -delete
 
 /usr/local/bin/nixgen-savemeta "$SCRATCH/mnt"
+# import-dir stdout is exactly the store path (mtime-based ls -t
+# selection cannot work, store mtimes are all canonicalised to 1);
+# stash it for the outer shell across the namespace boundary
 LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
-	/nixstoredev "$NAME" "$SCRATCH/mnt"
+	/nixstoredev "$NAME" "$SCRATCH/mnt" > "$SCRATCH/imported"
 EOF
 unshare -mpf --kill-child sh "$SCRATCH/inner.sh"
 
-NEW=$(ls -td /nixstoredev/nix/store/*-"$NAME" | head -1)
+NEW=$(cat "$SCRATCH/imported")
 NEWGEN=$(basename "$NEW")
 
 # new entry boots the new generation's own kernel+initramfs (a kernel

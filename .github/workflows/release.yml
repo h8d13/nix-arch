@@ -24,7 +24,7 @@ jobs:
         run: |
           pacman-key --init
           pacman --noconfirm -Sy archlinux-keyring
-          pacman --noconfirm -Syu git meson ninja gcc pkgconf boost boost-libs \
+          pacman --noconfirm --needed -Syu git meson ninja gcc pkgconf boost boost-libs \
             openssl libsodium libarchive brotli zstd libblake3 nlohmann-json \
             sqlite curl libseccomp grub xorriso mtools github-cli
           # container root has no subuid range; without one bootstrap.sh

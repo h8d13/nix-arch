@@ -9,7 +9,7 @@ kernel (module tree effectively unloaded until reboot). Here an update
 builds the *next* generation offline; the running root is never touched.
 
 It also aims to solve partial updates in a way, since the current gen;
-only lives in RAM and `checkupdates` equiv  is ran before `nixgen-update`
+only lives in RAM and `checkupdates` equivalent is ran before `nixgen-update`
 
 ![SchemaArchinix](./schema.png)
 

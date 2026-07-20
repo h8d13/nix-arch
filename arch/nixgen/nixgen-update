@@ -22,7 +22,9 @@ else
 fi
 LOWER=/nixstore/$GEN
 [ -d "$LOWER" ] || { echo "running generation '$GEN' not in /nixstore" >&2; exit 1; }
-[ -d /nixstoredev ] || {
+# mountpoint, not -d: generations carry the bare mountpoint dir, a
+# diskless boot would build into the RAM upper and lose it on reboot
+mountpoint -q /nixstoredev || {
 	echo "no writable store: boot with a NIXSTORE disk attached" >&2
 	exit 1
 }

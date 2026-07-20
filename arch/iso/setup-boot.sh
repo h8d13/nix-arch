@@ -13,6 +13,12 @@ install -Dm644 "$I/initcpio-hook-nixgen" /etc/initcpio/hooks/nixgen
 install -Dm644 "$I/mkinitcpio.conf" /etc/mkinitcpio.conf.d/nixgen.conf
 
 echo nixarch > /etc/hostname
+# boot-time store bind mountpoints: baked so commit-built and
+# sandbox-built generations agree on the tree (the initramfs mkdir -p
+# lands them in the tmpfs upper of every booted system otherwise, and
+# live commits freeze them as diff churn). Scripts must gate writable
+# store use on mountpoint -q, never on the dirs existing
+mkdir /nixstore /nixstoredev
 # login banner: stock /etc/issue renders \S{PRETTY_NAME} from
 # os-release. Override the pretty name via the /etc precedence file
 # (stock is a symlink into /usr/lib; rm first or > would follow it);
@@ -22,6 +28,10 @@ sed 's/^PRETTY_NAME=.*/PRETTY_NAME="nixarch"/' /usr/lib/os-release > /etc/os-rel
 # bake the machine identity into the generation: without it every boot
 # is a systemd "first boot" (tmpfs upper) and re-applies preset policy.
 # Generations of one machine sharing an id is the correct semantic.
+# The bootstrap tarball ships /etc/machine-id as "uninitialized" and
+# machine-id-setup only fills a missing or empty file: drop it first,
+# or the bake is a silent no-op and preset churn lands in every commit
+rm -f /etc/machine-id
 systemd-machine-id-setup
 # networking out of the box: DHCP on any en* (QEMU user NAT, real ethernet)
 cat > /etc/systemd/network/dhcp.network <<EOF
@@ -118,6 +128,9 @@ EOF
 # deps of import-dir/libnixstore
 pacman -Syu --noconfirm --needed linux mkinitcpio squashfs-tools diffutils \
 	libblake3 boost-libs sqlite
+# cached downloads are not system state (nixgen-update/-commit scrub the
+# same); already-compressed .zst does not squash, shipping it bloats the ISO
+rm -rf /var/cache/pacman/pkg/*
 
 # resolved-managed DNS. Last on purpose: pacman above still needed the
 # host resolv.conf that the sandbox copies in

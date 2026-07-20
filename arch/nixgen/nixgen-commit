@@ -11,10 +11,18 @@
 NAME=$1
 TARGET=${2:-/nixstoredev}
 [ -n "$NAME" ] || { echo "usage: $0 <name> [store-root]" >&2; exit 1; }
-[ -d "$TARGET" ] || {
-	echo "no writable store at $TARGET: boot with a NIXSTORE disk attached" >&2
+# default target must be the mounted store disk, not the bare
+# mountpoint dir baked into every generation; explicit targets
+# (nixgen-setup's freshly mounted partition) only need to exist
+if [ "$TARGET" = /nixstoredev ]; then
+	mountpoint -q /nixstoredev || {
+		echo "no writable store: boot with a NIXSTORE disk attached" >&2
+		exit 1
+	}
+elif [ ! -d "$TARGET" ]; then
+	echo "no writable store at $TARGET" >&2
 	exit 1
-}
+fi
 
 SNAP=/run/nixgen-snap
 mkdir -p "$SNAP"

@@ -7,7 +7,9 @@
 # here anyway (read-only store).
 # usage: nixgen-remove <name|id>...
 [ $# -ge 1 ] || { echo "usage: $0 <name|id>..." >&2; exit 1; }
-[ -d /nixstoredev ] || {
+# mountpoint, not -d: generations carry the bare mountpoint dir, a
+# diskless boot would GC a RAM copy and touch nothing real
+mountpoint -q /nixstoredev || {
 	echo "no writable store: boot with a NIXSTORE disk attached" >&2
 	exit 1
 }

@@ -15,15 +15,19 @@ run_hook() {
 }
 
 # mount the first candidate device that actually carries the store;
-# checking for the squashfs beats trusting device names. The store disk
-# is a known non-candidate: probing it iso9660 spams wrong-fs-type
-# kernel messages on every boot that reaches the hunt
+# checking for the squashfs beats trusting device names. blkid gates
+# the probe: only iso9660 devices get a mount attempt, so a mediumless
+# sr0, the ext4 store disk and foreign disks never print mount errors
+# on the boot console (probe-by-failing was the old behavior; the
+# util-linux fsconfig mount reports each miss loudly)
 nixgen_mount_iso() {
-	sd=$(readlink -f "$storedev" 2>/dev/null)
 	for d in "/dev/disk/by-label/$label" /dev/sr0 /dev/sr1 \
 			/dev/vda /dev/vdb /dev/sda /dev/sdb; do
 		[ -b "$d" ] || continue
-		[ -n "$sd" ] && [ "$(readlink -f "$d")" = "$sd" ] && continue
+		case "$(blkid "$d" 2>/dev/null)" in
+		*'TYPE="iso9660"'*) ;;
+		*) continue ;;
+		esac
 		mount -r -t iso9660 "$d" /run/nixiso || continue
 		[ -f /run/nixiso/nixstore.squashfs ] && return 0
 		umount /run/nixiso

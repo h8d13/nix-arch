@@ -24,6 +24,9 @@
 #include <new>
 #include <thread>
 #include <sys/types.h>
+#if NIX_SUPPORT_ACL
+#  include <sys/xattr.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -86,6 +89,30 @@ ref<Store> LocalStore::Config::openStore() const
 {
     return make_ref<LocalStore>(ref{shared_from_this()});
 }
+
+/* A default POSIX ACL on the store dir would make every node the
+   restore creates inherit ACL xattrs, which only the full
+   canonicalisePathMetaData walk strips. One llistxattr on the store
+   dir per import decides whether the canonical restore (which skips
+   that walk) is safe; a store on an ACL-defaulted directory is a
+   pathological layout, not the common case paying for it. */
+static bool dirGrantsDefaultAcl(const std::filesystem::path & dir)
+{
+#if NIX_SUPPORT_ACL
+    ssize_t eaSize = llistxattr(dir.c_str(), nullptr, 0);
+    if (eaSize <= 0)
+        return false;
+    std::vector<char> eaBuf(eaSize);
+    if ((eaSize = llistxattr(dir.c_str(), eaBuf.data(), eaBuf.size())) < 0)
+        return false;
+    for (auto & eaName :
+         tokenizeString<Strings>(std::string(eaBuf.data(), eaSize), std::string("\000", 1)))
+        if (eaName == "system.posix_acl_default")
+            return true;
+#endif
+    return false;
+}
+
 
 struct LocalStore::State::Stmts
 {
@@ -850,7 +877,9 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
 
                 TeeSource wrapperSource{source, hashSink};
 
-                restorePath(realPath, wrapperSource, config->getLocalSettings().fsyncStorePaths);
+                bool canonicalRestore = !dirGrantsDefaultAcl(config->realStoreDir.get());
+                restorePath(
+                    realPath, wrapperSource, config->getLocalSettings().fsyncStorePaths, canonicalRestore);
 
                 auto hashResult = hashSink.finish();
 
@@ -902,7 +931,13 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
 
                 autoGC();
 
-                canonicalisePathMetaData(realPath, {NIX_WHEN_SUPPORT_ACLS(config->getLocalSettings().ignoredAcls)});
+                /* the canonical restore stamped every node except the
+                   root (see restorePath); finish it in place */
+                if (canonicalRestore)
+                    canonicaliseTimestampAndPermissions(realPath);
+                else
+                    canonicalisePathMetaData(
+                        realPath, {NIX_WHEN_SUPPORT_ACLS(config->getLocalSettings().ignoredAcls)});
 
                 optimisePath(realPath, repair); // FIXME: combine with hashPath()
 
@@ -1353,18 +1388,35 @@ static void restorePathCapturingHashes(
     FileSerialisationMethod method,
     bool startFsync,
     LocalStore::ImportFileHashes * fileHashes,
-    const std::filesystem::path * linksDir)
+    const std::filesystem::path * linksDir,
+    bool canonical)
 {
     if (!fileHashes || method != FileSerialisationMethod::NixArchive) {
-        restorePath(path, source, method, startFsync);
+        restorePath(path, source, method, startFsync, canonical);
         return;
     }
-    RestoreSink inner{startFsync};
+    RestoreSink inner{startFsync, canonical};
     inner.dstPath = path;
+    /* directory canonicalisation must wait for the hasher: its
+       streamed dedup swaps files via link+rename, which both fails
+       against an already read-only (0555) directory and bumps its
+       just-stamped mtime. Children land in the list before parents,
+       the root last (finishCanonical below). */
+    std::vector<std::filesystem::path> dirs;
+    if (canonical)
+        inner.deferCanonicalDirs = &dirs;
     AsyncFileHasher hasher{*fileHashes, linksDir ? &path : nullptr, linksDir};
     FileHashingSink sink{inner, CanonPath::root, hasher};
     parseDump(sink, source);
     hasher.finish();
+    /* the root is deliberately NOT finished here: a directory rename
+       across parents (moveFile out of the temp dir) needs write
+       permission on the moved directory itself, so the caller
+       canonicalises the root once it reaches its final path */
+    for (auto & dir : dirs) {
+        chmod(dir, 0555);
+        setWriteTime(dir, 1, 1, false); /* mtimeStore */
+    }
 }
 
 StorePath LocalStore::addToStoreFromDump(
@@ -1448,6 +1500,13 @@ StorePath LocalStore::addToStoreFromDump(
        wrong sort, and we need to rehash. */
     bool inMemoryAndDontNeedRestore = inMemory && methodsMatch;
 
+    /* NAR restores create every node themselves, so the sink can stamp
+       store-canonical metadata as it goes and the canonicalise walk
+       below becomes redundant; both restore targets (temp dir and real
+       path) live under realStoreDir, so one ACL check covers them */
+    bool canonicalRestore = dumpMethod == FileSerialisationMethod::NixArchive
+        && !dirGrantsDefaultAcl(config->realStoreDir.get());
+
     if (!inMemoryAndDontNeedRestore) {
         /* Drain what we pulled so far, and then keep on pulling */
         StringSource dumpSource{dump};
@@ -1458,7 +1517,8 @@ StorePath LocalStore::addToStoreFromDump(
         tempPath = tempDir / "x";
 
         restorePathCapturingHashes(
-            tempPath, bothSource, dumpMethod, localSettings.fsyncStorePaths, fileHashes, &linksDir);
+            tempPath, bothSource, dumpMethod, localSettings.fsyncStorePaths, fileHashes, &linksDir,
+            canonicalRestore);
 
         dumpBuffer.reset();
         dump = {};
@@ -1509,7 +1569,8 @@ StorePath LocalStore::addToStoreFromDump(
                         (FileSerialisationMethod) fim,
                         localSettings.fsyncStorePaths,
                         fileHashes,
-                        &linksDir);
+                        &linksDir,
+                        canonicalRestore);
                     break;
                 }
             } else {
@@ -1526,8 +1587,18 @@ StorePath LocalStore::addToStoreFromDump(
                 narHash = narSink.finish();
             }
 
-            canonicalisePathMetaData(
-                realPath, {NIX_WHEN_SUPPORT_ACLS(localSettings.ignoredAcls)}); // FIXME: merge into restorePath
+            /* merged into restorePath: the canonical restore stamps
+               every node as it is created, so the full walk (lstat +
+               llistxattr + chmod + utimensat per entry, half of them
+               journaled writes on the store medium) only runs for the
+               layouts the sink cannot cover. The root is the one node
+               the sink left alone (the move above needed it writable);
+               one lstat + chmod + utimensat finishes it in place */
+            if (canonicalRestore)
+                canonicaliseTimestampAndPermissions(realPath);
+            else
+                canonicalisePathMetaData(
+                    realPath, {NIX_WHEN_SUPPORT_ACLS(localSettings.ignoredAcls)});
 
             optimisePath(realPath, repair);
 

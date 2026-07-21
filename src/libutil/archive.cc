@@ -77,10 +77,28 @@ void SourceAccessor::dumpPath(const CanonPath & path, Sink & sink, PathFilter & 
         else if (st.type == tDirectory) {
             sink << "type" << "directory";
 
+            /* NAR cannot represent sockets or fifos, and a live root
+               always has some (gpg-agent under /etc/pacman.d/gnupg).
+               Skip them here, from the type readdir already returned:
+               callers used to pass a PathFilter doing its own lstat
+               per entry, doubling the stat traffic of a whole import
+               (66k -> 33k on arch-base) to learn what d_type said for
+               free. Entries without a d_type (filesystems that return
+               DT_UNKNOWN) fall through to dump()'s own lstat, which
+               throws on specials as before: acceptable, since the
+               skip-silently semantic is this fork's local-store
+               policy, not something exotic filesystems must get. */
+            auto entries = accessor.readDirectory(path);
+            for (auto it = entries.begin(); it != entries.end();)
+                if (it->second == tFifo || it->second == tSocket)
+                    it = entries.erase(it);
+                else
+                    ++it;
+
             /* If we're on a case-insensitive system like macOS, undo
                the case hack applied by restorePath(). */
             StringMap unhacked;
-            for (auto & i : accessor.readDirectory(path))
+            for (auto & i : entries)
                 if (archiveSettings.useCaseHack) {
                     std::string name(i.first);
                     size_t pos = i.first.find(caseHackSuffix);
@@ -303,11 +321,17 @@ void parseDump(FileSystemObjectSink & sink, Source & source)
     parse(sink, source, CanonPath::root, 0);
 }
 
-void restorePath(const std::filesystem::path & path, Source & source, bool startFsync)
+void restorePath(const std::filesystem::path & path, Source & source, bool startFsync, bool canonical)
 {
-    RestoreSink sink{startFsync};
+    RestoreSink sink{startFsync, canonical};
     sink.dstPath = path;
     parseDump(sink, source);
+    /* the root directory is deliberately left uncanonicalised: callers
+       that restore into a temp dir rename it into place, and a
+       directory rename across parents needs write permission on the
+       moved directory itself. The final-path owner finishes the root
+       (canonicaliseTimestampAndPermissions); file and symlink roots
+       were already finished at creation. */
 }
 
 void copyNAR(Source & source, Sink & sink)

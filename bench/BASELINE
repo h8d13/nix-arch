@@ -2,38 +2,46 @@
 # (rerun the exact commands below, replace numbers, note the machine).
 # Regressions are judged against this file, not against memory.
 
-machine: i5-14600KF (20 threads), ext4, linux 7.1.3-arch1-3
-date: 2026-07-17
+machine: i5-14600KF (20 threads), ext4, linux 7.1.4-arch1-1
+date: 2026-07-21
 
 ## bench/run.sh 400 2000 5000 1   (800k files, 194 MiB dedupable)
 
-populate (addToStore)    17.120 s
-optimise pass1 (cold)     8.929 s   linked 794600 files
-optimise pass2 (warm)     0.014 s   linked 0
+populate (addToStore)     7.039 s
+optimise pass1 (cold)     7.881 s   linked 794600 files
+optimise pass2 (warm)     0.013 s   linked 0
 
 History: serial optimiseStore (pre thread-pool, same params, same
 machine) cold pass was ~9-12 s; the parallel win on this box is
 bounded by link-farm creation, not scanning. Commit 01ad51c holds the
 original 1000x1000x100k serial capture: populate 14.1 s, cold 23.0 s.
+Populate was 17.120 s until sourceToSink learned to buffer, and
+9.277 s until the canonical restore killed the canonicalise walk (see
+the syscall profile below); a NAR of many small files is nearly all
+tokens and per-file metadata, so this shape gains most from both.
 
 ## build/bench-import <root> 20000 32 10000   (640 MiB tree, 43% dup)
 
-import (capture off)     0.487 s
-optimise (capture off)   0.568 s   linked 11366
-import (capture on)      0.577 s   linked 11366
-optimise (capture on)    0.213 s
+import (capture off)     0.331 s
+optimise (capture off)   0.521 s   linked 11366
+import (capture on)      0.378 s   linked 11366
+optimise (capture on)    0.179 s
 
-Capture trades ~0.09 s at import (second hash thread) for ~2.7x
-faster optimise (no content re-read); linked counts must match
-on/off, a divergence means the captured hashes drifted (see
+Capture trades ~0.03 s at import (second hash thread) for ~3x faster
+optimise (no content re-read); linked counts must match on/off, a
+divergence means the captured hashes drifted (see
 tests/import-hashes.cc).
 
 ## bench/run-real.sh   (arch-base: 582 MiB, 33k entries, NVMe ext4)
 
-capture off/on (cold farm)  import 0.917 / 0.921 s
-                            optimise 0.556 / 0.247 s   linked 9731
-fresh install (import-dir)  wall 1.5 s
-update, 1-file variant      wall 1.3 s   linked 31704, freed 545.6 MiB
+capture off/on (cold farm)  import 0.638 / 0.676 s
+                            optimise 0.579 / 0.2 s   linked 9731
+fresh install (import-dir)  wall 0.9 s
+update, 1-file variant      wall 0.9 s   streamed dedup 545.4 MiB
+package update (+400 MiB)   wall 1.1 s
+
+First run after a build is noise: capture-on optimise measured 0.931 s
+cold and 0.227 s on every run after. Take the second number.
 
 The update phase is the on-box nixgen-update/commit hot path. Cost
 per duplicate file is two journaled metadata writes (farm hardlink +
@@ -45,8 +53,99 @@ run with the work dir on the target medium:
 
 ## bench/run.sh (defaults: 200 500 5000, quick smoke)
 
-populate (addToStore)     2.044 s
-optimise pass1 (cold)     0.938 s   linked 94800
+populate (addToStore)     1.087 s
+optimise pass1 (cold)     0.934 s   linked 94800
 optimise pass2 (warm)     0.003 s
-import (capture off/on)   0.129 / 0.153 s
+import (capture off/on)   0.102 / 0.116 s
 optimise (capture off/on) 0.127 / 0.044 s   linked 2847 both
+
+## syscall profile   (import-dir of arch-base, strace -c -f / perf stat)
+
+Import is three-way overlapped: the coroutine spine (dumpPath reads +
+NAR framing, restore writes) plus AsyncHashSink (whole-NAR digest) and
+AsyncFileHasher (per-file digests, streaming dedup), each on its own
+thread behind a 64-slot queue. Roughly half the CPU is kernel time, so
+syscall counts are the thing to watch, not just wall clock.
+
+                    original   buffered+filter   +canonical restore
+futex                939,993      415,188            ~436,000
+newfstatat           188,153      155,072             121,991
+llistxattr            33,082       33,082                   1
+chmod (path)          25,416       25,416               1,811
+geteuid               33,085       33,085                   3
+task-clock            2116 ms     ~1580 ms            ~1570 ms
+wall                  1.31 s      ~1.02 s              0.97 s
+
+sourceToSink was unbuffered while its mirror image sinkToSource has
+always wrapped its side in a 32 KiB CoroBufferedSink, with a comment
+saying why. dumpPath emits the NAR as tiny tokens ("(", "type",
+"regular", length words, padding), so unbuffered each token resumed
+the coroutine and became its own queue push into both hash threads: a
+mutex, a notify and an allocation apiece. Upstream mostly uses the
+buffered direction; import-dir uses the other one, on every commit.
+
+Follow-ups tried, with verdicts (measure, then promote or discard):
+
+- PROMOTED: the source-tree stat doubling was import-dir's noSpecials
+  PathFilter: archive.cc called filter(path) (a raw ::lstat) and then
+  immediately dump() -> accessor.lstat(path), while readDirectory had
+  already returned every entry's type from d_type. dumpPath now skips
+  fifo/socket entries itself and import-dir passes no filter: 188k ->
+  155k newfstatat, one lstat per entry. Wall-neutral on NVMe (hot
+  dentry cache); the win is code shape + sys time. Behavior pinned by
+  tests/specials-skip.sh, since the old mechanism is gone.
+- DISCARDED: memoising tryDedup's farm probes (hash -> size, worker
+  thread owns the map). A/B on the warm all-dup import: 107,571 vs
+  104,459 newfstatat, 3% for 17 lines. The 440x-probed .links entries
+  in the profile belong to the optimise pass (one probe per file
+  sharing that content), not tryDedup; optimise with capture is
+  already 0.2 s and parallel, so not worth chasing either.
+- DISCARDED: raising SourceToSink's BufferedSink from 32 KiB to
+  256 KiB. ~5% wall, futex 425k -> 385k: a knob, not a fix, and the
+  remaining futexes are AsyncFileHasher's per-file metadata events
+  (~4 per file), not data chunks. Batching those events is the one
+  real cut left on the futex side, if it is ever worth the churn.
+
+- PROMOTED: canonical restore (upstream's own FIXME at the old
+  canonicalise call site: "merge into restorePath"). RestoreSink in
+  canonical mode creates files 0444, stamps mtime 1 through the still
+  open fd, fchmods exec files 0555 without the fstat, canonicalises
+  each directory when its subtree completes, and symlink mtimes go
+  through the parent fd. The post-restore canonicalisePathMetaData
+  walk disappears: llistxattr 33k -> 1, geteuid 33k -> 3, path chmod
+  25.4k -> 1.8k, newfstatat 155k -> 122k. On nixgen-commit's store
+  disk that is one journaled metadata write less per restored file,
+  which is where USB-class media pays 1-2 ms apiece. Two ordering
+  traps, both hit and fixed: directory canonicalisation must wait for
+  the streamed dedup (its link+rename fails against 0555 and bumps the
+  fresh mtime), so capture-mode restores defer dirs until the hasher
+  drains; and the restore root must stay writable until moveFile has
+  renamed it out of the temp dir (cross-parent directory renames need
+  write on the moved dir), so the sink never finishes the root and the
+  final-path owner runs canonicaliseTimestampAndPermissions once.
+  moveFile silently swallows non-EXDEV rename failures, which turned
+  both traps into "path vanished" mysteries two calls later.
+  Fallbacks stay on the old full walk: Flat restores, and a store dir
+  carrying a default POSIX ACL (children would inherit xattrs the walk
+  used to strip; one llistxattr on the store dir per import decides).
+  Verified: store-path hashes byte-identical, all 58 unit TAP ok,
+  arch meta-test PASS (savemeta/restmeta contract bit-identical),
+  update-test FAST=1 full PASS (commit/update/remove/switch/setup in
+  the box, three boots). Also retired bootstrap.sh's destructive
+  find -delete of sockets/fifos (the dump skips them itself).
+
+- DISCARDED: dropping loadInodeHash() from the per-path optimise (the
+  farm scan reads the whole .links dir per import, which smelled like
+  O(store) paid per commit). Measured on the warm all-dup import: the
+  scan is ~100 batched getdents that lets readDirectoryIgnoringInodes
+  drop already-linked files from the walk entirely; without it the
+  walk pays 2 extra lstats per deduped file. 74,490 newfstatat with
+  the scan vs 121,662 without: the shortcut wins until a farm of
+  ~14M entries, which no box will see. The one scenario that could
+  flip it (cold farm directory on USB-class flash vs cache-hot
+  lstats) needs a real box to measure; on syscall count it loses
+  everywhere.
+
+Still open, measured: ~75k target-store stats remain (optimise walk +
+farm probes); optimise with capture is 0.2 s and parallel, so the
+remaining spend is known and cheap. The import side is done.

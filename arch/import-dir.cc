@@ -17,8 +17,6 @@
 #include <filesystem>
 #include <optional>
 
-#include <sys/stat.h>
-
 #include <nix/store/globals.hh>
 #include <nix/store/local-store.hh>
 #include <nix/store/store-open.hh>
@@ -59,18 +57,13 @@ try {
 				ContentAddressMethod::Raw::NixArchive,
 				HashAlgorithm::SHA256, {}, NoRepair, &fileHashes);
 		});
-		/* NAR has no representation for sockets/fifos; filtering them
-		   out of the dump replaces the callers' destructive
-		   find -delete against the live root. The filter sees paths
-		   relative to the accessor root ("/x/y"). */
-		PathFilter noSpecials = [&](const std::string & p) {
-			struct stat st;
-			if (::lstat((dir.native() + p).c_str(), &st) == -1)
-				return true; /* let the dump report it */
-			return !(S_ISSOCK(st.st_mode) || S_ISFIFO(st.st_mode));
-		};
+		/* sockets/fifos are skipped by dumpPath itself (NAR has no
+		   representation for them; see archive.cc), which replaced
+		   both the callers' destructive find -delete against live
+		   roots and the lstat-per-entry PathFilter that used to live
+		   here. */
 		SourcePath{makeFSSourceAccessor(dir), CanonPath::root}
-			.dumpPath(*sink, noSpecials);
+			.dumpPath(*sink);
 		sink->finish();
 	}
 	auto path = *imported;

@@ -68,14 +68,17 @@ void dumpPath(const SourcePath & path, Sink & sink, FileSerialisationMethod meth
     }
 }
 
-void restorePath(const std::filesystem::path & path, Source & source, FileSerialisationMethod method, bool startFsync)
+void restorePath(
+    const std::filesystem::path & path, Source & source, FileSerialisationMethod method, bool startFsync, bool canonical)
 {
     switch (method) {
     case FileSerialisationMethod::Flat:
+        /* flat restores stay on the post-restore canonicalise path:
+           one file, so there is no walk to save */
         writeFile(path, source, 0666, startFsync ? FsSync::Yes : FsSync::No, FinalSymlink::DontFollow);
         break;
     case FileSerialisationMethod::NixArchive:
-        restorePath(path, source, startFsync);
+        restorePath(path, source, startFsync, canonical);
         break;
     }
 }

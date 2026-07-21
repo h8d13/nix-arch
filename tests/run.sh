@@ -29,5 +29,6 @@ run nar-parse build/nar-parse
 run import-select sh -e tests/import-select.sh
 run gc-links sh -e tests/gc-links.sh
 run export-roundtrip sh -e tests/export-roundtrip.sh
+run specials-skip sh -e tests/specials-skip.sh
 
 exit $FAIL

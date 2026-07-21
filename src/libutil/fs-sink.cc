@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include "nix/util/error.hh"
 #include "nix/util/config-global.hh"
@@ -76,6 +77,24 @@ static GlobalConfig::Register r1(&restoreSinkSettings);
 
 } // namespace
 
+/* store-canonical mtime (mtimeStore in libstore); NAR carries no
+   timestamps, so canonical restores stamp every node with it */
+static const struct timespec canonicalTimes[2] = {{1, 0}, {1, 0}};
+
+/* the 0444/0555 create modes only land as-is when the process umask
+   leaves the canonical bits alone (022 and friends); a hostile umask
+   (077) forces an explicit fchmod per node instead. Process-global,
+   query once. */
+static bool umaskPreservesCanonicalModes()
+{
+    static bool ok = [] {
+        mode_t m = ::umask(0);
+        ::umask(m);
+        return (m & 0555) == 0;
+    }();
+    return ok;
+}
+
 static std::filesystem::path append(const std::filesystem::path & src, const CanonPath & path)
 {
     auto dst = src;
@@ -148,7 +167,8 @@ void RestoreSink::createDirectory(const CanonPath & path, DirectoryCreatedCallba
     createDirectory(path);
     assert(dirFd); // If that's not true the above call must have thrown an exception.
 
-    RestoreSink dirSink{startFsync};
+    RestoreSink dirSink{startFsync, canonical};
+    dirSink.deferCanonicalDirs = deferCanonicalDirs;
     dirSink.dstPath = append(dstPath, path);
     dirSink.dirFd = openFileEnsureBeneathNoSymlinks(
         dirFd.get(),
@@ -161,6 +181,25 @@ void RestoreSink::createDirectory(const CanonPath & path, DirectoryCreatedCallba
         throw SysError("opening directory %s", PathFmt(dirSink.dstPath));
 
     callback(dirSink, CanonPath::root);
+    /* NAR is depth-first: this directory is complete, nothing touches
+       it again, so its metadata canonicalises now through the fd */
+    dirSink.finishCanonical();
+}
+
+void RestoreSink::finishCanonical()
+{
+    if (!canonical || !dirFd)
+        return;
+    if (deferCanonicalDirs) {
+        deferCanonicalDirs->push_back(dstPath);
+        return;
+    }
+    /* dirs are made 0777-masked so they stay populatable; canonical
+       mode and mtime land only once the subtree is closed */
+    if (fchmod(dirFd.get(), 0555) == -1)
+        throw SysError("fchmod");
+    if (futimens(dirFd.get(), canonicalTimes) == -1)
+        throw SysError("setting mtime of %1%", PathFmt(dstPath));
 }
 
 void RestoreSink::createDirectory(const CanonPath & path)
@@ -187,11 +226,14 @@ struct RestoreRegularFile : CreateRegularFileSink, FdSink
 {
     AutoCloseFD fd;
     bool startFsync = false;
+    bool canonical = false;
+    bool madeExecutable = false;
 
-    RestoreRegularFile(bool startFSync_, AutoCloseFD fd_)
+    RestoreRegularFile(bool startFSync_, bool canonical_, AutoCloseFD fd_)
         : FdSink(fd_.get())
         , fd(std::move(fd_))
         , startFsync(startFSync_)
+        , canonical(canonical_)
     {
     }
 
@@ -227,22 +269,39 @@ void RestoreSink::createRegularFile(const CanonPath & path, fun<void(CreateRegul
 {
     auto crf = RestoreRegularFile(
         startFsync,
+        canonical,
         [&]() {
             /* O_EXCL together with O_CREAT ensures symbolic links in the last
                component are not followed. */
             constexpr int flags = O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC;
             auto [_parentFd, fd, name] = getParentFdAndName(dirFd.get(), dstPath, path);
-            return openFileEnsureBeneathNoSymlinks(fd, name, flags, 0666);
+            /* canonical: born 0444, so no chmod is ever needed on this
+               file (the write fd stays writable regardless of mode) */
+            return openFileEnsureBeneathNoSymlinks(fd, name, flags, canonical ? 0444 : 0666);
         }()
     );
     if (!crf.fd)
         throw NativeSysError("creating file %1%", PathFmt(append(dstPath, path)));
     func(crf);
     crf.flush();
+    if (canonical) {
+        if (!umaskPreservesCanonicalModes() && !crf.madeExecutable
+            && fchmod(crf.fd.get(), 0444) == -1)
+            throw SysError("fchmod");
+        if (futimens(crf.fd.get(), canonicalTimes) == -1)
+            throw SysError("setting mtime of %1%", PathFmt(append(dstPath, path)));
+    }
 }
 
 void RestoreRegularFile::isExecutable()
 {
+    if (canonical) {
+        /* mode is known (0444 at creation); no fstat needed */
+        madeExecutable = true;
+        if (fchmod(fd.get(), 0555) == -1)
+            throw SysError("fchmod");
+        return;
+    }
     // Windows doesn't have a notion of executable file permissions we
     // care about here, right?
     auto st = nix::fstat(fd.get());
@@ -276,6 +335,11 @@ void RestoreSink::createSymlink(const CanonPath & path, const std::string & targ
     auto [_parentFd, fd, name] = getParentFdAndName(dirFd.get(), dstPath, path);
     if (::symlinkat(requireCString(target), fd, name.rel_c_str()) == -1)
         throw SysError("creating symlink from %1% -> '%2%'", PathFmt(append(dstPath, path)), target);
+    /* symlink modes are ignored by the kernel; only the mtime needs
+       canonicalising, through the parent fd (no path resolution) */
+    if (canonical
+        && utimensat(fd, name.rel_c_str(), canonicalTimes, AT_SYMLINK_NOFOLLOW) == -1)
+        throw SysError("setting mtime of %1%", PathFmt(append(dstPath, path)));
 }
 
 void RegularFileSink::createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> func)

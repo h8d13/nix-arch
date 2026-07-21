@@ -109,8 +109,8 @@ if [ ! -L "$TMP/mnt/etc/resolv.conf" ] \
 fi
 
 # sockets/fifos (gpg-agent drops them in /etc/pacman.d/gnupg) are
-# skipped by import-dir's dump filter, no scrub needed. /tmp and /run
-# were namespace tmpfs, nothing of them is in the upper
+# skipped by the dump itself (NAR cannot hold them), no scrub needed.
+# /tmp and /run were namespace tmpfs, nothing of them is in the upper
 
 "$REPO/arch/nixgen/nixgen-savemeta" "$TMP/mnt"
 LD_LIBRARY_PATH=$P/lib "$REPO/build/import-dir" "$STORE_ROOT" "$NAME" "$TMP/mnt" \

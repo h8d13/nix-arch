@@ -133,8 +133,33 @@ public:
     AutoCloseFD dirFd;
     bool startFsync = false;
 
-    explicit RestoreSink(bool startFsync)
+    /**
+     * Restore with store-canonical metadata as each node completes:
+     * files 0444/0555 at creation, mtime 1 via the still-open fd,
+     * directories fchmod+futimens when their subtree is done, symlink
+     * mtimes set through the parent fd. A NAR restore creates every
+     * node itself, so the post-restore canonicalisePathMetaData walk
+     * (lstat + llistxattr + chmod + utimensat per entry, and a second
+     * journaled metadata write per file on the store medium) becomes
+     * redundant and the caller can skip it. Callers must finish the
+     * root directory themselves (finishCanonical()): it is the one
+     * node still open when parsing ends.
+     */
+    bool canonical = false;
+
+    /**
+     * When set (canonical mode only), completed directories are
+     * recorded here instead of being touched, children before
+     * parents. For callers whose streamed dedup renames files
+     * asynchronously: a rename would both fail against an already
+     * read-only (0555) directory and bump its just-stamped mtime, so
+     * directory metadata must land after that machinery drains.
+     */
+    std::vector<std::filesystem::path> * deferCanonicalDirs = nullptr;
+
+    explicit RestoreSink(bool startFsync, bool canonical = false)
         : startFsync{startFsync}
+        , canonical{canonical}
     {
     }
 
@@ -145,6 +170,12 @@ public:
     void createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)>) override;
 
     void createSymlink(const CanonPath & path, const std::string & target) override;
+
+    /**
+     * Canonicalise the root directory (the node whose fd this sink
+     * holds); no-op for non-canonical sinks and non-directory roots.
+     */
+    void finishCanonical();
 };
 
 /**

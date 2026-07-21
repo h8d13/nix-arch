@@ -21,8 +21,8 @@ Yet for the current to vanish when nothing to `-commit`:
 
 Inside the box (installed by `setup-boot.sh`):
 All commands: reference is `nixgen-help` (source:
-[nixgen/nixgen-help](nixgen/nixgen-help), drift-checked by
-update-test: every installed nixgen-* must appear in it).
+[nixgen/nixgen-help](nixgen-help), drift-checked by
+update-test: every installed [nixgen-*](./nixgen/) must appear in it).
 
 ## Tools
 
@@ -51,26 +51,20 @@ update-test: every installed nixgen-* must appear in it).
 | `tests/diskless-test.sh` | ISO with no store disk: boots promptly (nothing waits for absent hardware) and refuses commit/update/remove |
 | `tests/isohunt-test.sh` | ISO hunt with the by-label shortcut broken: finds the medium past a decoy disk, without probe-by-mounting noise |
 
-## From nothing
+### Boot flow
 
-Host deps: build deps from the root README, plus
-`pacman -S --needed grub xorriso mtools e2fsprogs (qemu-base edk2-ovmf)`,
-and the progs of whatever store filesystem you pick (`btrfs-progs`,
-`xfsprogs`, `f2fs-tools`): a builtin kernel driver is not a mkfs.
-No root needed anywhere; no squashfs-tools (mksquashfs runs from
-inside the generation). QEMU optional.
-
-Boot flow: the initramfs is systemd-init (`HOOKS=(base systemd keyboard
+initramfs is systemd-init (`HOOKS=(base systemd keyboard
 block nixgen)`). `nixgen-store.service` takes the generation named by
 `nixgen=` from the store disk (label NIXSTORE) when it holds it, else
 from `nixstore.squashfs` on the ISO, and stages the tmpfs upper; a
 generator writes the `sysroot.mount` that overlays them, so the root
 filesystem is a unit like any other; `nixgen-bind.service` exposes the
 store at `/nixstore` and the store-disk root at `/nixstoredev` before
-switch-root. A failure anywhere in that chain lands in
-`emergency.target`: a shell with `journalctl` behind it, not a bare
-busybox prompt. Networking is baked in (networkd DHCP on `en*`,
-resolved DNS). Autologin only while root is passwordless (stock state,
+switch-root.
+
+Networking is baked in (networkd DHCP on `en*`, resolved DNS).
+
+Autologin only while root is passwordless (stock state,
 what the headless tests ride on). `passwd root` restores login prompts,
 but the password lives in the tmpfs upper like any write: commit it,
 or the next boot is passwordless autologin again.
@@ -98,6 +92,7 @@ filesystem; run it with no arguments to list them.
 Dry-run the whole thing first: `arch/uefi-vm.sh` (argless) boots the ISO
 with a single blank disk at `/dev/vda`, exactly the shape of the real
 thing, and `arch/uefi-vm.sh boot` starts the result alone afterwards.
+
 The store disk is never attached on that path: an installed target has
 its own NIXSTORE partition, and two of them makes GRUB's label search
 ambiguous.

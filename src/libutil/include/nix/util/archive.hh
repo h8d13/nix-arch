@@ -71,7 +71,10 @@ void dumpString(std::string_view s, Sink & sink);
 
 void parseDump(FileSystemObjectSink & sink, Source & source);
 
-void restorePath(const std::filesystem::path & path, Source & source, bool startFsync = false);
+/* canonical: restore with store-canonical metadata baked in (see
+   RestoreSink::canonical), making a post-restore canonicalise walk
+   redundant */
+void restorePath(const std::filesystem::path & path, Source & source, bool startFsync = false, bool canonical = false);
 
 /**
  * Read a NAR from 'source' and write it to 'sink'.

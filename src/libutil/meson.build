@@ -57,7 +57,6 @@ boost = dependency(
   'boost',
   modules : [
     'context',
-    'coroutine',
     'iostreams',
   ],
   include_type : 'system',

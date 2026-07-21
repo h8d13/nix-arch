@@ -351,8 +351,20 @@ static constexpr size_t defaultCoroutineStackSize = 512 * 1024;
 
 std::unique_ptr<FinishSink> sourceToSink(fun<void(Source &)> reader)
 {
-    struct SourceToSink : FinishSink
+    /* Buffered for the same reason sinkToSource buffers its side:
+       dumpPath emits the NAR as a stream of tiny tokens ("(", "type",
+       "regular", each length word, each padding run). Unbuffered, every
+       one of them resumes the coroutine and arrives at the consumer as
+       its own read(), which downstream becomes a queue push per token
+       into each async hash thread: a mutex, a notify and an allocation
+       apiece. Measured on a 552 MiB tree: 940k futex calls, gone once
+       the tokens coalesce. */
+    struct SourceToSink : BufferedSink, FinishSink
     {
+        /* both bases pin the vtable with their own anchor override, so
+           this one has to name the final overrider */
+        void anchor() override {}
+
         typedef boost::coroutines2::coroutine<bool> coro_t;
 
         fun<void(Source &)> reader;
@@ -365,7 +377,7 @@ std::unique_ptr<FinishSink> sourceToSink(fun<void(Source &)> reader)
 
         std::string_view cur;
 
-        void operator()(std::string_view in) override
+        void writeUnbuffered(std::string_view in) override
         {
             if (in.empty())
                 return;
@@ -401,6 +413,9 @@ std::unique_ptr<FinishSink> sourceToSink(fun<void(Source &)> reader)
 
         void finish() override
         {
+            /* the tail of the NAR is still in the buffer; the coroutine
+               must see it before being told the stream ended */
+            flush();
             if (coro && *coro)
                 (*coro)(true);
         }

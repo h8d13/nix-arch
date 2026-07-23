@@ -1,0 +1,43 @@
+#!/bin/sh -e
+# Single owner of entries.cfg writes: the menuentry stanza that commit,
+# update and adopt used to carry as three copies, appended atomically
+# (GRUB sources this file; a torn append is a broken menu), plus the
+# rooting invariant: an entry implies a GC root, so a menu line can
+# never point at a collectable path. One direction only: import-path'd
+# generations without entries keep their import root until
+# nixgen-remove, which prunes entry and root together.
+# The entry inherits the running cmdline minus the generation selector
+# and GRUB bookkeeping; nixdata= and friends ride along on purpose.
+# usage: nixgen-entry <store-root> <gen-basename> <tag>
+STORE=$1 GEN=$2 TAG=$3
+[ -n "$STORE" ] && [ -n "$GEN" ] && [ -n "$TAG" ] || {
+	echo "usage: $0 <store-root> <gen> <tag>" >&2
+	exit 1
+}
+CFG=$STORE/entries.cfg
+! grep -q "nixgen=$GEN " "$CFG" 2>/dev/null || {
+	echo "entry for $GEN already in entries.cfg" >&2
+	exit 1
+}
+
+CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
+	| grep -v '^nixgen=\|^nixsource=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
+
+# same-fs copy + mv: readers see the old or the new file, never a tear
+TMP=$CFG.new
+[ ! -f "$CFG" ] || cp "$CFG" "$TMP"
+cat >> "$TMP" <<EOF
+menuentry "nixarch: $GEN ($TAG)" {
+	search --no-floppy --set=nixdev --label NIXSTORE
+	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN nixsource=disk $CMDLINE
+	initrd (\$nixdev)/nix/store/$GEN/boot/initramfs-linux.img
+}
+EOF
+mv "$TMP" "$CFG"
+
+# logical target, matching import-dir's addPermRoot symlinks. -L, not
+# -e: the target is dangling from the box's view (no /nix/store here),
+# and -e follows the link
+ROOTS=$STORE/nix/var/nix/gcroots
+mkdir -p "$ROOTS"
+[ -L "$ROOTS/$GEN" ] || ln -s "/nix/store/$GEN" "$ROOTS/$GEN"

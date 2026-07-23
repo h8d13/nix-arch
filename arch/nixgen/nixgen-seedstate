@@ -1,0 +1,22 @@
+#!/bin/sh -e
+# Seed state dirs on a data partition: first use of each path creates
+# it and copies the system's current copy in (cp -a: ownership, modes,
+# symlinks), so /home arrives with its users and /var/log with its
+# history. An already-seeded path is left alone: the partition's copy
+# is the living one from then on.
+# Called by nixgen-state.service at boot (root = /run/nixdata) and by
+# nixgen-data at format time (root = its temp mount).
+# usage: nixgen-seedstate <data-root> <abs-path>...
+ROOT=$1
+[ -d "$ROOT" ] && [ $# -ge 2 ] || {
+	echo "usage: $0 <data-root> <abs-path>..." >&2
+	exit 1
+}
+shift
+for p; do
+	d=$ROOT$p
+	[ ! -d "$d" ] || continue
+	mkdir -p "$d"
+	# a manifest path the generation never created seeds empty
+	[ ! -d "$p" ] || cp -a "$p/." "$d/"
+done

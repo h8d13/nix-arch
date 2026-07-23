@@ -216,7 +216,7 @@ drive "NIXARCH BOOT OK" \
 	"GRUB entry added" \
 	'nixgen-adopt "$S" 2>&1 || echo DUP_"REFUSED"' \
 	"DUP_REFUSED" \
-	"nixgen-setup /dev/vdb inst-test" \
+	"nixgen-setup /dev/vdb inst-test --data 1G" \
 	"type the device path to continue" \
 	"/dev/vdb" \
 	"installed: inst-test on /dev/vdb" \
@@ -251,6 +251,10 @@ QPID=$!
 drive "NIXARCH BOOT OK" \
 	'grep -o "nixgen=[^ ]*" /proc/cmdline' \
 	"-inst-test" \
+	'grep -o "nixdata=[^ ]*" /proc/cmdline' \
+	"nixdata=NIXDATA" \
+	'echo "homefs=$(findmnt -no FSTYPE -T /home)"' \
+	"homefs=ext4" \
 	"poweroff" > /dev/null || { kill $QPID 2>/dev/null; exit 1; }
 wait $QPID
 rm -f build/tmp/install-test.img build/tmp/test-ovmf-vars.fd

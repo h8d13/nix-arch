@@ -155,16 +155,6 @@ NEW=$(cat "$SCRATCH/imported")
 NEWGEN=$(basename "$NEW")
 
 # new entry boots the new generation's own kernel+initramfs (a kernel
-# upgrade regenerates them in the overlay via the mkinitcpio ALPM hook),
-# same kernel params minus the generation selector and GRUB bookkeeping
-CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
-	| grep -v '^nixgen=\|^nixsource=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
-
-cat >> /nixstoredev/entries.cfg <<EOF
-menuentry "nixarch: $NEWGEN (committed)" {
-	search --no-floppy --set=nixdev --label NIXSTORE
-	linux (\$nixdev)/nix/store/$NEWGEN/boot/vmlinuz-linux nixgen=$NEWGEN nixsource=disk $CMDLINE
-	initrd (\$nixdev)/nix/store/$NEWGEN/boot/initramfs-linux.img
-}
-EOF
+# upgrade regenerates them in the overlay via the mkinitcpio ALPM hook)
+/usr/local/lib/nixgen-entry /nixstoredev "$NEWGEN" committed
 echo "updated: $NEWGEN (GRUB entry added, reboot to switch)"

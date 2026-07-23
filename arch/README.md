@@ -71,6 +71,24 @@ switch-root.
 
 Networking is baked in (networkd DHCP on `en*`, resolved DNS).
 
+### State
+
+Three categories. Committed content is the generation and rolls back
+with it. Uncommitted writes live in the RAM upper and vanish. Paths
+listed in `/etc/nixgen/state` (default `/home`, `/var/log`) can ride a
+real partition instead: `nixgen-data /dev/sdXn` formats and seeds it
+(label NIXDATA), `nixdata=NIXDATA` on a GRUB entry's linux line mounts
+it, commit's non-recursive snapshot excludes it, so that state flows
+forward across generations instead of branching with them. Fully
+opt-in: no flag or no disk means volatile as before, per entry.
+`/var/lib/pacman` stays committed on purpose: the package db describes
+the static tree.
+
+Scope note: this is the nix *store* layer (interference-free, deduped,
+GC-rooted, atomic rollback), not the nix *language* layer. Generations
+are content-addressed snapshots, not reproducible builds from
+derivations.
+
 Autologin only while root is passwordless (stock state,
 what the headless tests ride on). `passwd root` restores login prompts,
 but the password lives in the tmpfs upper like any write: commit it,
@@ -92,7 +110,9 @@ GPT (ESP + NIXSTORE), a standalone GRUB whose whole job is sourcing
 `entries.cfg` from the store partition, and a first generation committed
 from the running root. It refuses to run until the device path is typed
 back; everything on the target is lost. `--fs` picks the store
-filesystem; run it with no arguments to list them.
+filesystem; run it with no arguments to list them. `--data 20G` adds a
+NIXDATA partition on the same disk and installs persistent from the
+first boot (see State above).
 
 ## VM-testing
 

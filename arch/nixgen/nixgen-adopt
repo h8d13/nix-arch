@@ -15,22 +15,7 @@ DIR=$TARGET/nix/store/$GEN
 	echo "$GEN carries no kernel+initramfs: refusing a boot entry" >&2
 	exit 1
 }
-! grep -q "nixgen=$GEN " "$TARGET/entries.cfg" 2>/dev/null || {
-	echo "entry for $GEN already in entries.cfg" >&2
-	exit 1
-}
-
-# adopted entry boots with the same kernel params as the running
-# system, minus the generation selector and GRUB's own bookkeeping
-# (mirrors nixgen-commit)
-CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
-	| grep -v '^nixgen=\|^nixsource=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
-
-cat >> "$TARGET/entries.cfg" <<EOF
-menuentry "nixarch: $GEN (adopted)" {
-	search --no-floppy --set=nixdev --label NIXSTORE
-	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN nixsource=disk $CMDLINE
-	initrd (\$nixdev)/nix/store/$GEN/boot/initramfs-linux.img
-}
-EOF
+# nixgen-entry refuses duplicates and roots the path: an adopted
+# (import-path'd) generation may predate its root
+/usr/local/lib/nixgen-entry "$TARGET" "$GEN" adopted
 echo "adopted: $GEN (GRUB entry added, visible next boot)"

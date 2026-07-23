@@ -1,0 +1,89 @@
+#!/bin/sh
+# systemd generator (booted system, not initrd): nixdata=<label> on the
+# kernel cmdline plus the generation's state manifest
+# (/etc/nixgen/state, one absolute path per line) become mount units:
+# the labeled partition at /run/nixdata, one bind per manifest path on
+# top of the overlay root. Nothing here lives in the store, so the same
+# generation boots volatile or persistent depending only on its GRUB
+# entry; no nixdata= or no manifest generates nothing at all. An
+# absent partition fails the mounts wants-style after the device
+# timeout below and the boot continues volatile.
+DEST=${2:-$1}
+[ -n "$DEST" ] || exit 1
+[ ! -e /etc/initrd-release ] || exit 0
+
+label=
+for w in $(cat /proc/cmdline); do
+	case $w in
+	nixdata=*) label=${w#nixdata=} ;;
+	esac
+done
+[ -n "$label" ] || exit 0
+[ -s /etc/nixgen/state ] || exit 0
+
+cat > "$DEST/run-nixdata.mount" <<EOF
+[Unit]
+Description=nixgen data partition (label $label)
+
+[Mount]
+What=/dev/disk/by-label/$label
+Where=/run/nixdata
+EOF
+
+# x-systemd.device-timeout is fstab-only (ignored in a unit's
+# Options=); the device drop-in is how fstab-generator implements it.
+# 10s: a detached disk costs one short wait, not the 90s default
+DEVUNIT=$(systemd-escape --path --suffix=device "/dev/disk/by-label/$label")
+mkdir -p "$DEST/$DEVUNIT.d"
+cat > "$DEST/$DEVUNIT.d/nixgen-timeout.conf" <<EOF
+[Unit]
+JobRunningTimeoutSec=10
+EOF
+
+# the manifest is parsed once, here; paths ride into the seeder as
+# arguments (absolute, no whitespace: the unit line splits on it)
+set --
+while IFS= read -r p; do
+	case $p in
+	/*) set -- "$@" "$p" ;;
+	esac
+done < /etc/nixgen/state
+[ $# -gt 0 ] || exit 0
+
+# DefaultDependencies=no: a service's default deps include
+# After=basic.target, and the binds below sit before local-fs.target,
+# which is before basic: keeping them is an ordering cycle systemd
+# resolves by deleting an arbitrary job (nixgen-perms.service made the
+# same call). The shutdown conflict re-arms it across soft-reboots
+cat > "$DEST/nixgen-state.service" <<EOF
+[Unit]
+Description=seed nixgen state dirs on the data partition
+DefaultDependencies=no
+RequiresMountsFor=/run/nixdata
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/nixgen-seedstate /run/nixdata $*
+EOF
+
+# wants-links (not requires): a failed data mount must not fail
+# local-fs.target, the boot degrades to volatile instead
+mkdir -p "$DEST/local-fs.target.wants"
+for p; do
+	unit=$(systemd-escape --path --suffix=mount "$p")
+	cat > "$DEST/$unit" <<EOF
+[Unit]
+Description=persistent $p from the nixgen data partition
+Requires=nixgen-state.service
+After=nixgen-state.service
+
+[Mount]
+What=/run/nixdata$p
+Where=$p
+Options=bind
+EOF
+	ln -sf "../$unit" "$DEST/local-fs.target.wants/$unit"
+done

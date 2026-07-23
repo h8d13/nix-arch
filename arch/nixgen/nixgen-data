@@ -1,0 +1,76 @@
+#!/bin/sh -e
+# Format a partition as the persistent data disk (label NIXDATA) and
+# seed it with the running system's copy of each state path. The
+# generation's manifest (/etc/nixgen/state) names the paths; a boot
+# with nixdata=NIXDATA on its GRUB entry's linux line bind-mounts them
+# from the partition instead of the RAM upper, and commit's
+# non-recursive snapshot excludes them: that state flows forward
+# across generations instead of branching with them. Fully opt-in:
+# entries without nixdata= keep the volatile behavior, and a detached
+# disk costs a 10s probe before the boot proceeds volatile.
+# usage: nixgen-data <partition> [--fs <type>]
+#        fs default ext4 (nixgen-fs table; no GRUB constraint here,
+#        the kernel just has to mount it)
+. /usr/local/lib/nixgen-fs
+
+DEV= FS=ext4
+while [ $# -gt 0 ]; do
+	case $1 in
+	--fs) FS=$2; shift 2 ;;
+	--fs=*) FS=${1#--fs=}; shift ;;
+	-*) echo "unknown option: $1" >&2; exit 1 ;;
+	*) DEV=$1; shift ;;
+	esac
+done
+is_supported_fs "$FS" || exit 1
+[ -b "$DEV" ] || {
+	echo "usage: $0 <partition> [--fs <type>]" >&2
+	echo "  <type>: $(echo "$NIXGEN_FS_ALL" | tr ' ' '|') (default ext4)" >&2
+	exit 1
+}
+[ -s /etc/nixgen/state ] || {
+	echo "no /etc/nixgen/state manifest: nothing would ever mount" >&2
+	exit 1
+}
+if grep -q "^$DEV" /proc/mounts; then
+	echo "refusing: $DEV is mounted" >&2
+	exit 1
+fi
+
+lsblk -dn -o NAME,SIZE,MODEL,TRAN "$DEV"
+printf 'everything on %s will be lost. type the device path to continue: ' "$DEV"
+read -r reply
+[ "$reply" = "$DEV" ] || { echo "aborted"; exit 1; }
+
+# same on-demand dep pattern as nixgen-setup: mkfs tools stay out of
+# the generations, land in the ephemeral upper
+pacman -S --needed --noconfirm "$(fs_pkg "$FS")" || {
+	echo "data: dep install failed (stale generation?);" \
+		"nixgen-update + reboot, then retry" >&2
+	exit 1
+}
+fs_mkfs "$FS" "$DEV" NIXDATA
+
+# seed now, from the running root: the upper's current /home is what
+# the user expects to find after rebooting persistent, and a reboot
+# would drop it (the boot-time seeder only sees the pristine lower)
+T=$(mktemp -d /run/nixgen-data.XXXXXX)
+cleanup() {
+	if mountpoint -q "$T"; then
+		umount "$T"
+	fi
+	rm -rf "$T"
+}
+trap cleanup EXIT
+mount "$DEV" "$T"
+PATHS=
+while IFS= read -r p; do
+	case $p in
+	/*) PATHS="$PATHS $p" ;;
+	esac
+done < /etc/nixgen/state
+/usr/local/lib/nixgen-seedstate "$T" $PATHS
+
+echo "data partition ready on $DEV (label NIXDATA)"
+echo "boot with nixdata=NIXDATA appended to a GRUB entry's linux line"
+echo "(edit /nixstoredev/entries.cfg); commit/update entries inherit it"

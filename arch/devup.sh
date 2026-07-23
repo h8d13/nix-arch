@@ -7,5 +7,14 @@ cd "$(dirname "$0")"
 rm -f /usr/local/bin/nixgen-fs
 install -Dm644 nixgen/nixgen-fs /usr/local/lib/nixgen-fs
 for t in nixgen/nixgen-*; do
-	[ "$t" = nixgen/nixgen-fs ] || install -m755 "$t" /usr/local/bin/
+	case ${t#nixgen/} in
+	nixgen-fs) ;;
+	# lib pieces stay out of the drift-checked command surface
+	nixgen-entry|nixgen-seedstate)
+		install -m755 "$t" /usr/local/lib/ ;;
+	nixgen-data-generator)
+		install -m755 "$t" /etc/systemd/system-generators/ ;;
+	*)
+		install -m755 "$t" /usr/local/bin/ ;;
+	esac
 done

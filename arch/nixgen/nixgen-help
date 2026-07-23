@@ -69,12 +69,27 @@ COMMANDS
               nixgen-commit appends). Refuses paths without a
               kernel+initramfs and duplicate entries.
 
-       nixgen-setup <device> [name] [--fs <type>]
+       nixgen-data <partition> [--fs <type>]
+              Format a partition as the persistent data disk (label
+              NIXDATA) and seed it from the running root. Paths listed
+              in /etc/nixgen/state (default /home and /var/log) then
+              mount from it on any boot whose GRUB entry carries
+              nixdata=NIXDATA; commit excludes them, so that state
+              flows forward across generations instead of rolling back
+              with them. Opt-in per entry: without the flag (or the
+              disk) those paths stay in the RAM upper as usual.
+              Committed/updated entries inherit the flag from the
+              running cmdline. --fs as in nixgen-setup (ext4 default).
+
+       nixgen-setup <device> [name] [--fs <type>] [--data <size>]
               Install onto a disk from inside the box: GPT (ESP +
               NIXSTORE), standalone GRUB, fresh store seeded with a
               commit of the running root. --fs picks the store filesystem (ext4 default,
               also btrfs, xfs, f2fs); run without arguments to list
-              them. GRUB has to read the store to load a generation's
+              them. --data carves a NIXDATA partition of <size> on the
+              same disk (same fs), seeds it and stamps nixdata=NIXDATA
+              into the installed entry: single-disk persistent state
+              without a separate nixgen-data run. GRUB has to read the store to load a generation's
               kernel, which is what limits the choice. Deps (grub,
               dosfstools, the filesystem's own progs) install on demand
               into the ephemeral upper: needs network, gone at reboot.
@@ -101,12 +116,21 @@ INTERNALS
        nixgen-help
               This page.
 
+       Off the command surface (/usr/local/lib): nixgen-entry writes
+       entries.cfg atomically and GC-roots the entry's generation
+       (shared by commit/update/adopt); nixgen-seedstate first-time
+       seeds state dirs onto the data partition. A system generator
+       (nixgen-data-generator) turns nixdata=<label> plus the manifest
+       into the /run/nixdata mount and the per-path binds.
+
 FILES
        /nixstore                     store holding the running generation
        /nixstoredev                  store-disk root (when attached)
        /nixstoredev/entries.cfg      GRUB menu of committed generations
        /run/nixgen-active            live generation after a soft switch
+       /run/nixdata                  data partition (nixdata= boots)
        etc/nixgen/{perms,caps,acls}  metadata manifests, per generation
+       etc/nixgen/state              paths that ride the data partition
 
 NIXGEN(7)                  nixstore generations                  NIXGEN(7)
 EOF

@@ -97,9 +97,27 @@ install -m755 "$I/nixgen-adopt" /usr/local/bin/nixgen-adopt
 install -m755 "$I/nixgen-help" /usr/local/bin/nixgen-help
 install -m755 "$I/nixgen-savemeta" /usr/local/bin/nixgen-savemeta
 install -m755 "$I/nixgen-restmeta" /usr/local/bin/nixgen-restmeta
+install -m755 "$I/nixgen-data" /usr/local/bin/nixgen-data
 # sourced table, not a command: /usr/local/lib keeps it out of the
 # nixgen-* command surface (nixgen-help drift check globs bin/)
 install -Dm644 "$I/nixgen-fs" /usr/local/lib/nixgen-fs
+# internal pieces, same reasoning: the entries.cfg writer shared by
+# commit/update/adopt and the state seeder the generated units call
+install -Dm755 "$I/nixgen-entry" /usr/local/lib/nixgen-entry
+install -Dm755 "$I/nixgen-seedstate" /usr/local/lib/nixgen-seedstate
+
+# persistent state, opt-in per boot entry: the generator turns
+# nixdata=<label> plus this manifest into mount units (partition at
+# /run/nixdata, one bind per path). Without nixdata= it is inert and
+# every write stays in the RAM upper. The manifest is generation
+# content on purpose: WHICH paths are state is configuration and rolls
+# back with it; the state itself lives on the partition and flows
+# forward. /var/lib/pacman is deliberately absent: the package db
+# describes the static tree and must roll back with it
+install -Dm755 "$I/nixgen-data-generator" \
+	/etc/systemd/system-generators/nixgen-data-generator
+install -d /etc/nixgen
+printf '/home\n/var/log\n' > /etc/nixgen/state
 
 # store import canonicalises permissions (dirs 0555, no setuid/sticky/
 # ownership/caps); replay the captured manifest before anything else

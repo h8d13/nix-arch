@@ -15,6 +15,15 @@
   of downloads+extract) dies with `Write failed` in a 2G box. Big
   installs: `nixgen-update` (upper on the store disk), more `-m`, or
   commit + reboot between chunks (the upper resets).
+- **State is three categories, not two.** Committed content rolls back
+  with the generation; the RAM upper vanishes; paths listed in
+  `/etc/nixgen/state` (default `/home`, `/var/log`) can ride a data
+  partition (`nixgen-data`, then `nixdata=NIXDATA` on the entry) and
+  flow *forward* across generations. Bulk mutable data (a Steam
+  library, a database) belongs there: through the upper it eats RAM,
+  through commit it branches with the config tree. `/var/lib/pacman`
+  is deliberately not listed: the package db describes the static tree
+  and must roll back with it.
 - **Import canonicalises permissions** (dirs 0555, files 0444/0555,
   root-owned, no xattrs: NAR keeps only the executable bit).
   `nixgen-savemeta` captures what that strips (modes, ownership incl.

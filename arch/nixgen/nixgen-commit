@@ -53,16 +53,5 @@ NEW=$(/usr/local/bin/import-dir \
 	"$TARGET" "$NAME" "$SNAP")
 GEN=$(basename "$NEW")
 
-# new entry boots with the same kernel params as the running system,
-# minus the generation selector and GRUB's own bookkeeping
-CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
-	| grep -v '^nixgen=\|^nixsource=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
-
-cat >> "$TARGET/entries.cfg" <<EOF
-menuentry "nixarch: $GEN (committed)" {
-	search --no-floppy --set=nixdev --label NIXSTORE
-	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN nixsource=disk $CMDLINE
-	initrd (\$nixdev)/nix/store/$GEN/boot/initramfs-linux.img
-}
-EOF
+/usr/local/lib/nixgen-entry "$TARGET" "$GEN" committed
 echo "committed: $GEN (GRUB entry added, visible next boot)"
